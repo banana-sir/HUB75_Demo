@@ -1,0 +1,43 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// HUB75E LED矩阵配置
+#define PANEL_RES_X 64      // LED矩阵宽度
+#define PANEL_RES_Y 32      // LED矩阵高度
+#define PANEL_CHAIN 1       // 矩阵链长度
+
+// GPIO引脚定义
+#define R1_PIN 6
+#define G1_PIN 7
+#define B1_PIN 8
+#define R2_PIN 9
+#define G2_PIN 10
+#define B2_PIN 11
+#define A_PIN 15
+#define B_PIN 16
+#define C_PIN 17
+#define D_PIN 18
+#define E_PIN -1 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e. IO32
+#define LAT_PIN 13
+#define OE_PIN 14
+#define CLK_PIN 12
+
+
+#define DEFAULT_BRIGHTNESS 128  // 默认亮度 (0-255)
+
+// ============================================================================
+// 滚动文本配置
+// ============================================================================
+
+// 滚动文本延迟
+#define SCROLL_TIME_DELAY_LOW 30
+#define SCROLL_TIME_DELAY_MEDIUM 30
+#define SCROLL_TIME_DELAY_FAST 30
+
+// 滚动文本偏移
+#define SCROLL_OFFSET_LOW -1
+#define SCROLL_OFFSET_MEDIUM -2
+#define SCROLL_OFFSET_FAST -3
+
+
+#endif
