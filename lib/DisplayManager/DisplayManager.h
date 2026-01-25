@@ -3,7 +3,8 @@
 
 #include <Arduino.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
-#include "config.h"
+#include "esp_task_wdt.h"
+#include "../../include/config.h"
 
 class DisplayManager {
 private:
@@ -63,5 +64,8 @@ public:
     uint16_t getYellowColor() { return yellowColor; }
     uint16_t getPinkColor() { return pinkColor; }
 };
+
+// 全局实例声明
+extern DisplayManager displayManager;
 
 #endif // DISPLAY_MANAGER_H
