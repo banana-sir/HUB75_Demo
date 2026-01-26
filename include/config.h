@@ -39,5 +39,16 @@
 #define SCROLL_OFFSET_MEDIUM -2
 #define SCROLL_OFFSET_FAST -3
 
+// ============================================================================
+// WiFi 和 MQTT 配置
+// ============================================================================
+#define WIFI_SSID "helloworld"
+#define WIFI_PASSWORD "15819652435"
+#define MQTT_SERVER "zheng241.xyz"
+#define MQTT_PORT 1883
+#define MQTT_USERNAME "minggo"
+#define MQTT_PASSWORD "123456"
+#define MQTT_TOPIC "LED/Text"
+
 
 #endif
