@@ -11,7 +11,7 @@ void setup() {
   Serial.println("Starting...");
 
   // 配置看门狗，延长超时时间
-  esp_task_wdt_init(10, true); // 10秒超时
+  esp_task_wdt_init(60, true); // 60秒超时
   esp_task_wdt_add(NULL);
 
   displayManager.init();
