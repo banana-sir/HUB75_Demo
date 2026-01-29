@@ -40,7 +40,7 @@ void WiFiManager::connectWiFi() {
 
     if (!connectionStatusDisplayed) {
         Serial.println("正在连接WiFi...");
-        displayManager.setTextColor(displayManager.getWhiteColor());
+        displayManager.setTextColor(displayManager.whiteColor);
         displayManager.setTextSize(1);
         displayManager.displayText("正在连接WiFi", false);
         connectionStatusDisplayed = true;
@@ -70,11 +70,13 @@ void WiFiManager::init() {
     preferences.begin("wifi_config", false);
 
     // 初始化 MQTT 客户端
-    mqttClient = new PubSubClient(wifiClient);
-    mqttClient->setServer(MQTT_SERVER, MQTT_PORT);
-    mqttClient->setCallback([this](char* topic, byte* payload, unsigned int length) {
-        this->parseAndDisplay((const char*)payload);
-    });
+    if (!mqttClient) {
+        mqttClient = new PubSubClient(wifiClient);
+        mqttClient->setServer(MQTT_SERVER, MQTT_PORT);
+        mqttClient->setCallback([this](char* topic, byte* payload, unsigned int length) {
+            this->parseAndDisplay((const char*)payload);
+        });
+    }
 
     // 首次连接 WiFi
     connectWiFi();
@@ -89,7 +91,7 @@ void WiFiManager::update() {
             dnsServer->processNextRequest();
         }
         // 配网模式下持续喂狗
-        esp_task_wdt_reset();
+        yield();
         return;
     }
 
@@ -163,12 +165,12 @@ void WiFiManager::parseAndDisplay(const char* payload) {
     const char* text = doc["text"];
     bool scrollMode = doc["scroll_mode"] | false;
     int fontSize = doc["font_size"] | 1;
-    const char* colorHex = doc["color"] | "#FF0000";
+    const char* colorHex = doc["color"] | "#FFFFFF";
     int scrollLine = doc["scroll_line"] | 1;
     int scrollSpeed = doc["scroll_speed"] | 1;
 
     // 解析颜色
-    uint16_t color = displayManager.getRedColor(); // 默认红色
+    uint16_t color = displayManager.whiteColor; // 默认白色
     if (strlen(colorHex) == 7 && colorHex[0] == '#') {
         int r = strtol(colorHex + 1, nullptr, 16) >> 16 & 0xFF;
         int g = strtol(colorHex + 3, nullptr, 16) >> 8 & 0xFF;
@@ -183,11 +185,8 @@ void WiFiManager::parseAndDisplay(const char* payload) {
     displayManager.setTextColor(color);
     displayManager.setTextScrollSpeed(scrollSpeed);
 
-    if (scrollMode) {
-        displayManager.displayText(text, true, scrollLine);
-    } else {
-        displayManager.displayText(text, false, scrollLine);
-    }
+    displayManager.displayText(text, scrollMode, scrollLine);
+
 }
 
 void WiFiManager::startConfigMode() {
@@ -209,7 +208,7 @@ void WiFiManager::startConfigMode() {
 
     // 显示配网信息到LED屏幕
     displayManager.setTextSize(1);
-    displayManager.setTextColor(displayManager.getWhiteColor());
+    displayManager.setTextColor(displayManager.whiteColor);
     displayManager.displayText("配网模式", false);
     
     String apInfo = "请连接热点：" + String(AP_SSID);
@@ -291,7 +290,7 @@ void WiFiManager::handleRoot() {
     html += "</style></head><body>";
     html += "<div class='container'>";
     html += "<div class='header'>";
-    html += "<h1>📡 LED矩阵配网</h1>";
+    html += "<h1>📡 LED点阵屏配网</h1>";
     html += "<p>请选择或输入您的WiFi信息</p>";
     html += "</div>";
     html += "<div class='content'>";
@@ -335,7 +334,7 @@ void WiFiManager::handleScan() {
     Serial.println("扫描WiFi网络...");
 
     // 扫描期间喂狗
-    esp_task_wdt_reset();
+    yield();
 
     int n = WiFi.scanNetworks();
     Serial.printf("找到 %d 个网络\n", n);
@@ -365,7 +364,7 @@ void WiFiManager::handleSave() {
     String password = webServer->arg("password");
 
     // 保存期间喂狗
-    esp_task_wdt_reset();
+    yield();
 
     if (ssid.length() == 0) {
         String json = "{\"success\":false,\"message\":\"WiFi名称不能为空\"}";
@@ -383,15 +382,13 @@ void WiFiManager::handleSave() {
     String json = "{\"success\":true,\"message\":\"配置已保存\"}";
     sendResponse(200, "application/json", json.c_str());
 
-    // 等待响应发送完成，期间持续喂狗
-    for (int i = 0; i < 5; i++) {
-        delay(100);
-        esp_task_wdt_reset();
-    }
+    // 等待响应发送完成
+    delay(500);
+    yield();
 
     // 更新显示
     displayManager.setTextSize(1);
-    displayManager.setTextColor(displayManager.getWhiteColor());
+    displayManager.setTextColor(displayManager.whiteColor);
     displayManager.displayText("正在连接WiFi", false);
 
     // 关闭配网模式

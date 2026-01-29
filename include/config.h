@@ -17,7 +17,7 @@
 #define B_PIN 16
 #define C_PIN 17
 #define D_PIN 18
-#define E_PIN -1 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e. IO32
+#define E_PIN -1 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e. 
 #define LAT_PIN 13
 #define OE_PIN 14
 #define CLK_PIN 12

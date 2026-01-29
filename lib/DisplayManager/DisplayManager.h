@@ -27,19 +27,19 @@ private:
     int maxLines;
     bool useMultiLine;
 
-    uint16_t blackColor;
+    void freeScrollText();
+
+public:
+    DisplayManager();
+    ~DisplayManager();
+
+    uint16_t blackColor; 
     uint16_t whiteColor;
     uint16_t redColor;
     uint16_t greenColor;
     uint16_t blueColor;
     uint16_t yellowColor;
     uint16_t pinkColor;
-
-    void freeScrollText();
-
-public:
-    DisplayManager();
-    ~DisplayManager();
 
     void init();
     void update();
@@ -55,14 +55,6 @@ public:
     void displayText(const char *textContent, bool isScroll);
     void displayText(const char *textContent, bool isScroll, int line);
 
-    // Getter for colors if needed
-    uint16_t getBlackColor() { return blackColor; }
-    uint16_t getWhiteColor() { return whiteColor; }
-    uint16_t getRedColor() { return redColor; }
-    uint16_t getGreenColor() { return greenColor; }
-    uint16_t getBlueColor() { return blueColor; }
-    uint16_t getYellowColor() { return yellowColor; }
-    uint16_t getPinkColor() { return pinkColor; }
 };
 
 // 全局实例声明
