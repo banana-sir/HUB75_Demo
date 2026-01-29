@@ -91,7 +91,7 @@ void WiFiManager::update() {
             dnsServer->processNextRequest();
         }
         // 配网模式下持续喂狗
-        yield();
+        esp_task_wdt_reset();
         return;
     }
 
@@ -334,7 +334,7 @@ void WiFiManager::handleScan() {
     Serial.println("扫描WiFi网络...");
 
     // 扫描期间喂狗
-    yield();
+    esp_task_wdt_reset();
 
     int n = WiFi.scanNetworks();
     Serial.printf("找到 %d 个网络\n", n);
@@ -364,7 +364,7 @@ void WiFiManager::handleSave() {
     String password = webServer->arg("password");
 
     // 保存期间喂狗
-    yield();
+    esp_task_wdt_reset();
 
     if (ssid.length() == 0) {
         String json = "{\"success\":false,\"message\":\"WiFi名称不能为空\"}";
@@ -384,7 +384,7 @@ void WiFiManager::handleSave() {
 
     // 等待响应发送完成
     delay(500);
-    yield();
+    esp_task_wdt_reset();
 
     // 更新显示
     displayManager.setTextSize(1);
