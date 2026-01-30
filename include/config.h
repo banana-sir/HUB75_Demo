@@ -33,9 +33,12 @@
 #define SCROLL_TIME_DELAY 30
 
 // 滚动文本像素偏移（负值表示向左滚动）
-#define SCROLL_OFFSET_LOW -1
-#define SCROLL_OFFSET_MEDIUM -2
-#define SCROLL_OFFSET_FAST -3
+#define SCROLL_OFFSET_LEFT_LOW -1
+#define SCROLL_OFFSET_LEFT_MEDIUM -2
+#define SCROLL_OFFSET_LEFT_FAST -3
+#define SCROLL_OFFSET_RIGHT_LOW 1
+#define SCROLL_OFFSET_RIGHT_MEDIUM 2
+#define SCROLL_OFFSET_RIGHT_FAST 3
 
 // ============================================================================
 // WiFi 和 MQTT 配置

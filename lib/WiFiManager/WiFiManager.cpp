@@ -168,6 +168,7 @@ void WiFiManager::parseAndDisplay(const char* payload) {
     const char* colorHex = doc["color"] | "#FFFFFF";
     int scrollLine = doc["scroll_line"] | 1;
     int scrollSpeed = doc["scroll_speed"] | 1;
+    int scrollDirection = doc["scroll_direction"] | 0;  // 0=向左，1=向右
 
     // 解析颜色
     uint16_t color = displayManager.whiteColor; // 默认白色
@@ -178,13 +179,16 @@ void WiFiManager::parseAndDisplay(const char* payload) {
         color = (r & 0xF8) << 8 | (g & 0xFC) << 3 | (b >> 3);
     }
 
-    Serial.printf("Text: %s, Scroll: %d, Size: %d, Line: %d, Speed: %d\n", text, scrollMode, fontSize, scrollLine, scrollSpeed);
+    Serial.printf("Text: %s, Scroll: %d, Size: %d, Line: %d, Speed: %d, Direction: %d\n", text, scrollMode, fontSize, scrollLine, scrollSpeed, scrollDirection);
 
     // 应用设置
     displayManager.setTextSize(fontSize);
 
-    // 使用一次调用完成显示，传入速度和颜色
-    displayManager.displayText(text, scrollMode, scrollLine, scrollSpeed, color);
+    // 转换方向：0=向左(SCROLL_LEFT)，其他=向右(SCROLL_RIGHT)
+    DisplayManager::ScrollDirection direction = (scrollDirection == 0) ? DisplayManager::SCROLL_LEFT : DisplayManager::SCROLL_RIGHT;
+
+    // 使用一次调用完成显示，传入速度、颜色和方向
+    displayManager.displayText(text, scrollMode, scrollLine, scrollSpeed, color, direction);
 
 }
 

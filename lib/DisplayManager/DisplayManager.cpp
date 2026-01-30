@@ -81,13 +81,22 @@ void DisplayManager::update() {
                 // 更新文本位置
                 scrollLines[i].xPosition += scrollLines[i].scrollXMove;
 
-                // 检查文本是否完全移出屏幕，若是则重置到右侧
+                // 检查文本是否完全移出屏幕，根据滚动方向重置位置
                 int16_t xOne, yOne;
                 uint16_t textWidth, textHeight;
                 dma_display->getTextBounds(scrollLines[i].content, scrollLines[i].xPosition, yPosition,
                                           &xOne, &yOne, &textWidth, &textHeight);
-                if (scrollLines[i].xPosition + textWidth <= 0) {
-                    scrollLines[i].xPosition = PANEL_RES_X;
+
+                if (scrollLines[i].scrollDirection == SCROLL_LEFT) {
+                    // 向左滚动：文本完全移出左侧时重置到右侧
+                    if (scrollLines[i].xPosition + textWidth <= 0) {
+                        scrollLines[i].xPosition = PANEL_RES_X;
+                    }
+                } else {
+                    // 向右滚动：文本完全移出右侧时重置到左侧
+                    if (scrollLines[i].xPosition >= PANEL_RES_X) {
+                        scrollLines[i].xPosition = -textWidth;
+                    }
                 }
 
                 // 设置该行的颜色并绘制滚动文本
@@ -130,23 +139,23 @@ void DisplayManager::clearScrollLine(int line) {
     }
 }
 
-void DisplayManager::calculateScrollSpeedParams(int speed, int& xMove, int& timeDelay) {
+void DisplayManager::calculateScrollSpeedParams(int speed, int& xMove, int& timeDelay, ScrollDirection direction) {
     // 根据滚动速度等级计算对应的像素移动值和时间延迟
     switch (speed) {
         case 1:
-            xMove = SCROLL_OFFSET_LOW;
+            xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT_LOW : SCROLL_OFFSET_RIGHT_LOW;
             timeDelay = SCROLL_TIME_DELAY;
             break;
         case 2:
-            xMove = SCROLL_OFFSET_MEDIUM;
+            xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT_MEDIUM : SCROLL_OFFSET_RIGHT_MEDIUM;
             timeDelay = SCROLL_TIME_DELAY;
             break;
         case 3:
-            xMove = SCROLL_OFFSET_FAST;
+            xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT_FAST : SCROLL_OFFSET_RIGHT_FAST;
             timeDelay = SCROLL_TIME_DELAY;
             break;
         default:
-            xMove = SCROLL_OFFSET_LOW;
+            xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT_LOW : SCROLL_OFFSET_RIGHT_LOW;
             timeDelay = SCROLL_TIME_DELAY;
             break;
     }
@@ -158,13 +167,44 @@ void DisplayManager::setLineScrollSpeed(int line, int speed) {
         int index = line - 1;
         if (scrollLines[index].isActive) {
             scrollLines[index].scrollSpeed = speed;
-            
+
             int xMove, timeDelay;
-            calculateScrollSpeedParams(speed, xMove, timeDelay);
-            
+            calculateScrollSpeedParams(speed, xMove, timeDelay, scrollLines[index].scrollDirection);
+
             scrollLines[index].scrollXMove = xMove;
             scrollLines[index].scrollTimeDelay = timeDelay;
             scrollLines[index].lastUpdateTime = millis();
+        }
+    }
+}
+
+void DisplayManager::setLineScrollDirection(int line, ScrollDirection direction) {
+    // 设置指定行的滚动方向，不影响其他行
+    if (line >= 1 && line <= maxLines && scrollLines) {
+        int index = line - 1;
+        if (scrollLines[index].isActive) {
+            scrollLines[index].scrollDirection = direction;
+
+            int xMove, timeDelay;
+            calculateScrollSpeedParams(scrollLines[index].scrollSpeed, xMove, timeDelay, direction);
+
+            scrollLines[index].scrollXMove = xMove;
+            scrollLines[index].scrollTimeDelay = timeDelay;
+            scrollLines[index].lastUpdateTime = millis();
+
+            // 如果切换方向，重置文本位置
+            if (direction == SCROLL_LEFT) {
+                scrollLines[index].xPosition = PANEL_RES_X;
+            } else {
+                // 计算文本宽度并设置到左侧
+                int16_t xOne, yOne;
+                uint16_t textWidth, textHeight;
+                if (scrollLines[index].content) {
+                    dma_display->getTextBounds(scrollLines[index].content, 0, scrollLines[index].yPosition,
+                                              &xOne, &yOne, &textWidth, &textHeight);
+                    scrollLines[index].xPosition = -textWidth;
+                }
+            }
         }
     }
 }
@@ -232,7 +272,7 @@ void DisplayManager::displayText(const char *textContent, bool isScroll) {
     clearAll();
 
     if (isScroll) {
-        // 滚动模式：在第一行设置滚动文本，使用默认速度 1（慢速）
+        // 滚动模式：在第一行设置滚动文本，使用默认速度 1（慢速），向左滚动
         dma_display->setTextWrap(false);
         int len = strlen(textContent) + 1;
         if (scrollLines[0].content != nullptr) {
@@ -243,10 +283,11 @@ void DisplayManager::displayText(const char *textContent, bool isScroll) {
             strcpy(scrollLines[0].content, textContent);
         }
 
-        // 设置默认速度参数（慢速）
+        // 设置默认速度参数（慢速）和方向（向左）
         int xMove, timeDelay;
-        calculateScrollSpeedParams(1, xMove, timeDelay);
+        calculateScrollSpeedParams(1, xMove, timeDelay, SCROLL_LEFT);
         scrollLines[0].scrollSpeed = 1;
+        scrollLines[0].scrollDirection = SCROLL_LEFT;
         scrollLines[0].scrollXMove = xMove;
         scrollLines[0].scrollTimeDelay = timeDelay;
         scrollLines[0].color = whiteColor;
@@ -264,7 +305,7 @@ void DisplayManager::displayText(const char *textContent, bool isScroll) {
     }
 }
 
-void DisplayManager::displayText(const char *textContent, bool isScroll, int line, int scrollSpeed, uint16_t color) {
+void DisplayManager::displayText(const char *textContent, bool isScroll, int line, int scrollSpeed, uint16_t color, ScrollDirection direction) {
     if (!isScroll) {
         // 静态文本：清屏后显示，支持自动换行
         delay(50);
@@ -276,7 +317,7 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, int lin
         return;
     }
 
-    // 滚动文本：在指定行显示，使用指定的速度和颜色
+    // 滚动文本：在指定行显示，使用指定的速度、颜色和方向
     if (line < 1 || line > maxLines) line = 1;
 
     delay(50);
@@ -300,15 +341,27 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, int lin
 
     // 设置该行的颜色（如果未指定颜色，则使用当前文本颜色）
     scrollLines[index].color = (color != 0) ? color : whiteColor;
+    scrollLines[index].scrollDirection = direction;
 
     // 设置该行的速度参数
     scrollLines[index].scrollSpeed = scrollSpeed;
     int xMove, timeDelay;
-    calculateScrollSpeedParams(scrollSpeed, xMove, timeDelay);
+    calculateScrollSpeedParams(scrollSpeed, xMove, timeDelay, direction);
 
     scrollLines[index].scrollXMove = xMove;
     scrollLines[index].scrollTimeDelay = timeDelay;
-    scrollLines[index].xPosition = PANEL_RES_X;
+
+    // 根据滚动方向设置初始位置
+    if (direction == SCROLL_LEFT) {
+        scrollLines[index].xPosition = PANEL_RES_X;
+    } else {
+        // 向右滚动：计算文本宽度，从左侧开始
+        int16_t xOne, yOne;
+        uint16_t textWidth, textHeight;
+        dma_display->getTextBounds(textContent, 0, yPosition, &xOne, &yOne, &textWidth, &textHeight);
+        scrollLines[index].xPosition = -textWidth;
+    }
+
     scrollLines[index].yPosition = yPosition;
     scrollLines[index].isScrolling = true;
     scrollLines[index].isActive = true;
