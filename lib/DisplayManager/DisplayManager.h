@@ -11,23 +11,27 @@ private:
     HUB75_I2S_CFG::i2s_pins _pins;
     MatrixPanel_I2S_DMA *dma_display;
 
-    int scrollTextTimeDelay;
-    int scrollXMove;
-    unsigned long isAnimationDue;
-    int scrollTextXPosition;
-    int scrollTextYPosition;
-    int16_t xOne, yOne;
-    uint16_t scrollTextWidth, scrollTextHeight;
-    int textSize;
-    bool isTextWrap;
-    bool isScrollText;
-    int scrollTextSpeed;
-    char *scrollTextContent;
-    int currentLine;
-    int maxLines;
-    bool useMultiLine;
+    // 滚动文本行状态结构体：存储每行的滚动文本信息
+    struct ScrollLine {
+        char *content;        // 滚动文本内容
+        int xPosition;        // 当前X坐标位置
+        int yPosition;        // 行的Y坐标（固定）
+        bool isScrolling;     // 是否正在滚动
+        bool isActive;        // 该行是否激活
+        
+        ScrollLine() : content(nullptr), xPosition(PANEL_RES_X), yPosition(0), 
+                       isScrolling(false), isActive(false) {}
+    };
 
-    void freeScrollText();
+    ScrollLine *scrollLines;  // 每行的滚动状态数组
+    int textSize;              // 文本大小
+    int maxLines;              // 最大行数
+    int scrollTextSpeed;       // 滚动速度（1=慢，2=中，3=快）
+    int scrollTextTimeDelay;   // 滚动时间间隔
+    int scrollXMove;           // 每次滚动移动的像素数
+    unsigned long isAnimationDue;  // 下一次动画更新的时间点
+
+    void freeAllScrollLines();  // 释放所有滚动行内存
 
 public:
     DisplayManager();
@@ -48,12 +52,12 @@ public:
     void clearArea(uint16_t x, uint16_t y, uint16_t width, uint16_t height);
     void clearLine(uint16_t line);
     void setTextSize(int size);
-    void setMultiLineMode(bool enable);
-    void setLine(int line);
     void setTextColor(uint16_t color);
     void setTextScrollSpeed(int speed);
-    void displayText(const char *textContent, bool isScroll);
-    void displayText(const char *textContent, bool isScroll, int line);
+    void setBrightness(uint8_t brightness);
+    void displayText(const char *textContent, bool isScroll);                    // 显示文本（单行模式）
+    void displayText(const char *textContent, bool isScroll, int line);          // 显示文本（多行模式，指定行号）
+    void clearScrollLine(int line);  // 清除指定行的滚动状态
 
 };
 
