@@ -182,10 +182,10 @@ void WiFiManager::parseAndDisplay(const char* payload) {
 
     // 应用设置
     displayManager.setTextSize(fontSize);
-    displayManager.setTextColor(color);
     displayManager.setTextScrollSpeed(scrollSpeed);
 
-    displayManager.displayText(text, scrollMode, scrollLine);
+    // 显示文本（传入颜色参数，使每行颜色独立）
+    displayManager.displayText(text, scrollMode, scrollLine, color);
 
 }
 

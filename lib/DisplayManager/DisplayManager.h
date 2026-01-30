@@ -18,9 +18,10 @@ private:
         int yPosition;        // 行的Y坐标（固定）
         bool isScrolling;     // 是否正在滚动
         bool isActive;        // 该行是否激活
-        
-        ScrollLine() : content(nullptr), xPosition(PANEL_RES_X), yPosition(0), 
-                       isScrolling(false), isActive(false) {}
+        uint16_t textColor;   // 该行的文本颜色
+
+        ScrollLine() : content(nullptr), xPosition(PANEL_RES_X), yPosition(0),
+                       isScrolling(false), isActive(false), textColor(0) {}
     };
 
     ScrollLine *scrollLines;  // 每行的滚动状态数组
@@ -55,8 +56,9 @@ public:
     void setTextColor(uint16_t color);
     void setTextScrollSpeed(int speed);
     void setBrightness(uint8_t brightness);
-    void displayText(const char *textContent, bool isScroll);                    // 显示文本（单行模式）
-    void displayText(const char *textContent, bool isScroll, int line);          // 显示文本（多行模式，指定行号）
+    void displayText(const char *textContent, bool isScroll);                                          // 显示文本（单行模式，使用当前颜色）
+    void displayText(const char *textContent, bool isScroll, int line);                                // 显示文本（多行模式，指定行号，使用当前颜色）
+    void displayText(const char *textContent, bool isScroll, int line, uint16_t color);               // 显示文本（多行模式，指定行号和颜色）
     void clearScrollLine(int line);  // 清除指定行的滚动状态
 
 };

@@ -97,7 +97,8 @@ void DisplayManager::update() {
                     scrollLines[i].xPosition = PANEL_RES_X;
                 }
 
-                // 绘制滚动文本
+                // 绘制滚动文本（使用该行的颜色）
+                dma_display->setTextColor(scrollLines[i].textColor);
                 dma_display->setCursor(scrollLines[i].xPosition, yPosition);
                 dma_display->printlnUTF8(scrollLines[i].content);
             }
@@ -202,7 +203,7 @@ void DisplayManager::setBrightness(uint8_t brightness) {
 
 void DisplayManager::displayText(const char *textContent, bool isScroll) {
     // 单行模式：清空屏幕后显示文本
-    delay(50);
+    delay(20);
     freeAllScrollLines();
     clearAll();
 
@@ -230,11 +231,17 @@ void DisplayManager::displayText(const char *textContent, bool isScroll) {
 }
 
 void DisplayManager::displayText(const char *textContent, bool isScroll, int line) {
+    // 多行模式：使用当前全局颜色
+    displayText(textContent, isScroll, line, whiteColor);
+}
+
+void DisplayManager::displayText(const char *textContent, bool isScroll, int line, uint16_t color) {
     if (!isScroll) {
         // 静态文本：清屏后显示，支持自动换行
-        delay(50);
+        delay(20);
         freeAllScrollLines();
         clearAll();
+        dma_display->setTextColor(color);
         dma_display->setCursor(0, 0);
         dma_display->setTextWrap(true);
         dma_display->printlnUTF8(textContent);
@@ -244,7 +251,7 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, int lin
     // 滚动文本：在指定行显示
     if (line < 1 || line > maxLines) line = 1;
 
-    delay(50);
+    delay(20);
     int index = line - 1;
 
     // 清除该行旧的滚动内容
@@ -265,6 +272,7 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, int lin
 
     scrollLines[index].xPosition = PANEL_RES_X;
     scrollLines[index].yPosition = yPosition;
+    scrollLines[index].textColor = color;
     scrollLines[index].isScrolling = true;
     scrollLines[index].isActive = true;
 }
