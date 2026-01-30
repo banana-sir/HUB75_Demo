@@ -182,10 +182,9 @@ void WiFiManager::parseAndDisplay(const char* payload) {
 
     // 应用设置
     displayManager.setTextSize(fontSize);
-    displayManager.setTextScrollSpeed(scrollSpeed);
 
-    // 显示文本（传入颜色参数，使每行颜色独立）
-    displayManager.displayText(text, scrollMode, scrollLine, color);
+    // 使用一次调用完成显示，传入速度和颜色
+    displayManager.displayText(text, scrollMode, scrollLine, scrollSpeed, color);
 
 }
 
@@ -208,12 +207,10 @@ void WiFiManager::startConfigMode() {
 
     // 显示配网信息到LED屏幕
     displayManager.setTextSize(1);
-    displayManager.setTextColor(displayManager.whiteColor);
     displayManager.displayText("配网模式", false);
     
     String apInfo = "请连接热点：" + String(AP_SSID);
-    displayManager.setTextScrollSpeed(1);
-    displayManager.displayText(apInfo.c_str(), true, 2);
+    displayManager.displayText(apInfo.c_str(), true, 2, 1, displayManager.whiteColor);
 
     // 初始化DNS服务器（Captive Portal）
     if (!dnsServer) {
@@ -388,7 +385,6 @@ void WiFiManager::handleSave() {
 
     // 更新显示
     displayManager.setTextSize(1);
-    displayManager.setTextColor(displayManager.whiteColor);
     displayManager.displayText("正在连接WiFi", false);
 
     // 关闭配网模式

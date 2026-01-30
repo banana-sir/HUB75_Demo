@@ -29,12 +29,10 @@
 // 滚动文本配置
 // ============================================================================
 
-// 滚动文本延迟
-#define SCROLL_TIME_DELAY_LOW 30
-#define SCROLL_TIME_DELAY_MEDIUM 30
-#define SCROLL_TIME_DELAY_FAST 30
+// 滚动文本延迟（ms）- 当前各速度档位统一使用相同值
+#define SCROLL_TIME_DELAY 30
 
-// 滚动文本偏移
+// 滚动文本像素偏移（负值表示向左滚动）
 #define SCROLL_OFFSET_LOW -1
 #define SCROLL_OFFSET_MEDIUM -2
 #define SCROLL_OFFSET_FAST -3

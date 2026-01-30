@@ -18,21 +18,23 @@ private:
         int yPosition;        // 行的Y坐标（固定）
         bool isScrolling;     // 是否正在滚动
         bool isActive;        // 该行是否激活
-        uint16_t textColor;   // 该行的文本颜色
-
-        ScrollLine() : content(nullptr), xPosition(PANEL_RES_X), yPosition(0),
-                       isScrolling(false), isActive(false), textColor(0) {}
+        int scrollSpeed;      // 该行的滚动速度（1=慢，2=中，3=快）
+        int scrollXMove;      // 该行每次滚动移动的像素数
+        int scrollTimeDelay;  // 该行的滚动时间间隔
+        uint16_t color;       // 该行的文本颜色
+        unsigned long lastUpdateTime;  // 该行上次更新的时间
+        
+        ScrollLine() : content(nullptr), xPosition(PANEL_RES_X), yPosition(0), 
+                       isScrolling(false), isActive(false), scrollSpeed(1), 
+                       scrollXMove(-1), scrollTimeDelay(30), color(0), lastUpdateTime(0) {}
     };
 
     ScrollLine *scrollLines;  // 每行的滚动状态数组
     int textSize;              // 文本大小
     int maxLines;              // 最大行数
-    int scrollTextSpeed;       // 滚动速度（1=慢，2=中，3=快）
-    int scrollTextTimeDelay;   // 滚动时间间隔
-    int scrollXMove;           // 每次滚动移动的像素数
-    unsigned long isAnimationDue;  // 下一次动画更新的时间点
 
     void freeAllScrollLines();  // 释放所有滚动行内存
+    void calculateScrollSpeedParams(int speed, int& xMove, int& timeDelay);  // 计算滚动速度参数
 
 public:
     DisplayManager();
@@ -53,13 +55,13 @@ public:
     void clearArea(uint16_t x, uint16_t y, uint16_t width, uint16_t height);
     void clearLine(uint16_t line);
     void setTextSize(int size);
-    void setTextColor(uint16_t color);
-    void setTextScrollSpeed(int speed);
+    void setTextColor(uint16_t color);  // 设置静态文本颜色
     void setBrightness(uint8_t brightness);
-    void displayText(const char *textContent, bool isScroll);                                          // 显示文本（单行模式，使用当前颜色）
-    void displayText(const char *textContent, bool isScroll, int line);                                // 显示文本（多行模式，指定行号，使用当前颜色）
-    void displayText(const char *textContent, bool isScroll, int line, uint16_t color);               // 显示文本（多行模式，指定行号和颜色）
+    void displayText(const char *textContent, bool isScroll);  // 显示文本（清屏，默认白色、速度1）
+    void displayText(const char *textContent, bool isScroll, int line, int scrollSpeed = 1, uint16_t color = 0);  // 显示文本（多行模式，完整参数）
     void clearScrollLine(int line);  // 清除指定行的滚动状态
+    void setLineScrollSpeed(int line, int speed);  // 设置指定行的滚动速度
+    void setLineColor(int line, uint16_t color);  // 设置指定行的颜色
 
 };
 

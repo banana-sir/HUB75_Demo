@@ -5,12 +5,8 @@ DisplayManager::DisplayManager() :
     _pins({R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN}),
     dma_display(nullptr),
     scrollLines(nullptr),
-    scrollTextTimeDelay(30),
-    scrollXMove(-1),
-    isAnimationDue(0),
     textSize(1),
     maxLines(1),
-    scrollTextSpeed(1),
     blackColor(0), whiteColor(0), redColor(0), greenColor(0), blueColor(0), yellowColor(0), pinkColor(0)
 {
 }
@@ -47,9 +43,6 @@ void DisplayManager::init() {
     dma_display->clearScreen();
 
     setTextSize(1);
-    setTextColor(redColor);
-    setTextScrollSpeed(2);
-    isAnimationDue = millis();
 
     // 初始化滚动行数组
     if (scrollLines == nullptr) {
@@ -72,21 +65,21 @@ void DisplayManager::update() {
     // 如果没有滚动行，直接返回
     if (!hasScrollingLines) return;
 
-    // 到达更新时间时，刷新所有滚动行
-    if (now > isAnimationDue) {
-        dma_display->flipDMABuffer();
-        isAnimationDue = now + scrollTextTimeDelay;
+    // 刷新DMA缓冲区
+    dma_display->flipDMABuffer();
 
-        // 更新所有激活的滚动行
-        for (int i = 0; i < maxLines; i++) {
-            if (scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
+    // 更新所有激活的滚动行，每行独立更新
+    for (int i = 0; i < maxLines; i++) {
+        if (scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
+            // 检查该行是否到达更新时间
+            if (now > scrollLines[i].lastUpdateTime) {
                 int yPosition = scrollLines[i].yPosition;
 
                 // 清除当前行区域
                 dma_display->fillRect(0, yPosition, PANEL_RES_X, textSize * 16, blackColor);
 
                 // 更新文本位置
-                scrollLines[i].xPosition += scrollXMove;
+                scrollLines[i].xPosition += scrollLines[i].scrollXMove;
 
                 // 检查文本是否完全移出屏幕，若是则重置到右侧
                 int16_t xOne, yOne;
@@ -97,10 +90,13 @@ void DisplayManager::update() {
                     scrollLines[i].xPosition = PANEL_RES_X;
                 }
 
-                // 绘制滚动文本（使用该行的颜色）
-                dma_display->setTextColor(scrollLines[i].textColor);
+                // 设置该行的颜色并绘制滚动文本
+                dma_display->setTextColor(scrollLines[i].color);
                 dma_display->setCursor(scrollLines[i].xPosition, yPosition);
                 dma_display->printlnUTF8(scrollLines[i].content);
+
+                // 设置下一次该行的更新时间
+                scrollLines[i].lastUpdateTime = now + scrollLines[i].scrollTimeDelay;
             }
         }
     }
@@ -131,6 +127,55 @@ void DisplayManager::clearScrollLine(int line) {
         scrollLines[index].isActive = false;
         scrollLines[index].isScrolling = false;
         scrollLines[index].xPosition = PANEL_RES_X;
+    }
+}
+
+void DisplayManager::calculateScrollSpeedParams(int speed, int& xMove, int& timeDelay) {
+    // 根据滚动速度等级计算对应的像素移动值和时间延迟
+    switch (speed) {
+        case 1:
+            xMove = SCROLL_OFFSET_LOW;
+            timeDelay = SCROLL_TIME_DELAY;
+            break;
+        case 2:
+            xMove = SCROLL_OFFSET_MEDIUM;
+            timeDelay = SCROLL_TIME_DELAY;
+            break;
+        case 3:
+            xMove = SCROLL_OFFSET_FAST;
+            timeDelay = SCROLL_TIME_DELAY;
+            break;
+        default:
+            xMove = SCROLL_OFFSET_LOW;
+            timeDelay = SCROLL_TIME_DELAY;
+            break;
+    }
+}
+
+void DisplayManager::setLineScrollSpeed(int line, int speed) {
+    // 设置指定行的滚动速度，不影响其他行
+    if (line >= 1 && line <= maxLines && scrollLines) {
+        int index = line - 1;
+        if (scrollLines[index].isActive) {
+            scrollLines[index].scrollSpeed = speed;
+            
+            int xMove, timeDelay;
+            calculateScrollSpeedParams(speed, xMove, timeDelay);
+            
+            scrollLines[index].scrollXMove = xMove;
+            scrollLines[index].scrollTimeDelay = timeDelay;
+            scrollLines[index].lastUpdateTime = millis();
+        }
+    }
+}
+
+void DisplayManager::setLineColor(int line, uint16_t color) {
+    // 设置指定行的颜色，不影响其他行
+    if (line >= 1 && line <= maxLines && scrollLines) {
+        int index = line - 1;
+        if (scrollLines[index].isActive) {
+            scrollLines[index].color = color;
+        }
     }
 }
 
@@ -169,29 +214,8 @@ void DisplayManager::setTextSize(int size) {
 }
 
 void DisplayManager::setTextColor(uint16_t color) {
-    // 设置文本颜色
+    // 仅用于设置静态文本颜色
     dma_display->setTextColor(color);
-}
-
-void DisplayManager::setTextScrollSpeed(int speed) {
-    // 设置滚动速度：1=慢，2=中，3=快
-    scrollTextSpeed = speed;
-    switch (scrollTextSpeed) {
-        case 1:
-            scrollXMove = SCROLL_OFFSET_LOW;
-            scrollTextTimeDelay = SCROLL_TIME_DELAY_LOW;
-            break;
-        case 2:
-            scrollXMove = SCROLL_OFFSET_MEDIUM;
-            scrollTextTimeDelay = SCROLL_TIME_DELAY_MEDIUM;
-            break;
-        case 3:
-            scrollXMove = SCROLL_OFFSET_FAST;
-            scrollTextTimeDelay = SCROLL_TIME_DELAY_FAST;
-            break;
-        default:
-            break;
-    }
 }
 
 void DisplayManager::setBrightness(uint8_t brightness) {
@@ -202,13 +226,13 @@ void DisplayManager::setBrightness(uint8_t brightness) {
 }
 
 void DisplayManager::displayText(const char *textContent, bool isScroll) {
-    // 单行模式：清空屏幕后显示文本
-    delay(20);
+    // 单行模式：清空屏幕后显示文本（使用默认颜色和速度）
+    delay(50);
     freeAllScrollLines();
     clearAll();
 
     if (isScroll) {
-        // 滚动模式：在第一行设置滚动文本
+        // 滚动模式：在第一行设置滚动文本，使用默认速度 1（慢速）
         dma_display->setTextWrap(false);
         int len = strlen(textContent) + 1;
         if (scrollLines[0].content != nullptr) {
@@ -218,40 +242,44 @@ void DisplayManager::displayText(const char *textContent, bool isScroll) {
         if (scrollLines[0].content != nullptr) {
             strcpy(scrollLines[0].content, textContent);
         }
+
+        // 设置默认速度参数（慢速）
+        int xMove, timeDelay;
+        calculateScrollSpeedParams(1, xMove, timeDelay);
+        scrollLines[0].scrollSpeed = 1;
+        scrollLines[0].scrollXMove = xMove;
+        scrollLines[0].scrollTimeDelay = timeDelay;
+        scrollLines[0].color = whiteColor;
         scrollLines[0].xPosition = PANEL_RES_X;
         scrollLines[0].yPosition = 0;
         scrollLines[0].isScrolling = true;
         scrollLines[0].isActive = true;
+        scrollLines[0].lastUpdateTime = millis();
     } else {
-        // 静态文本模式：支持自动换行
+        // 静态文本模式：支持自动换行，使用默认白色
+        dma_display->setTextColor(whiteColor);
         dma_display->setCursor(0, 0);
         dma_display->setTextWrap(true);
         dma_display->printlnUTF8(textContent);
     }
 }
 
-void DisplayManager::displayText(const char *textContent, bool isScroll, int line) {
-    // 多行模式：使用当前全局颜色
-    displayText(textContent, isScroll, line, whiteColor);
-}
-
-void DisplayManager::displayText(const char *textContent, bool isScroll, int line, uint16_t color) {
+void DisplayManager::displayText(const char *textContent, bool isScroll, int line, int scrollSpeed, uint16_t color) {
     if (!isScroll) {
         // 静态文本：清屏后显示，支持自动换行
-        delay(20);
+        delay(50);
         freeAllScrollLines();
         clearAll();
-        dma_display->setTextColor(color);
         dma_display->setCursor(0, 0);
         dma_display->setTextWrap(true);
         dma_display->printlnUTF8(textContent);
         return;
     }
 
-    // 滚动文本：在指定行显示
+    // 滚动文本：在指定行显示，使用指定的速度和颜色
     if (line < 1 || line > maxLines) line = 1;
 
-    delay(20);
+    delay(50);
     int index = line - 1;
 
     // 清除该行旧的滚动内容
@@ -270,9 +298,19 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, int lin
         strcpy(scrollLines[index].content, textContent);
     }
 
+    // 设置该行的颜色（如果未指定颜色，则使用当前文本颜色）
+    scrollLines[index].color = (color != 0) ? color : whiteColor;
+
+    // 设置该行的速度参数
+    scrollLines[index].scrollSpeed = scrollSpeed;
+    int xMove, timeDelay;
+    calculateScrollSpeedParams(scrollSpeed, xMove, timeDelay);
+
+    scrollLines[index].scrollXMove = xMove;
+    scrollLines[index].scrollTimeDelay = timeDelay;
     scrollLines[index].xPosition = PANEL_RES_X;
     scrollLines[index].yPosition = yPosition;
-    scrollLines[index].textColor = color;
     scrollLines[index].isScrolling = true;
     scrollLines[index].isActive = true;
+    scrollLines[index].lastUpdateTime = millis();
 }
