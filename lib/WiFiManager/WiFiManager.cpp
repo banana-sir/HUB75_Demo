@@ -73,9 +73,32 @@ void WiFiManager::init() {
     if (!mqttClient) {
         mqttClient = new PubSubClient(wifiClient);
         mqttClient->setServer(MQTT_SERVER, MQTT_PORT);
-        mqttClient->setCallback([this](char* topic, byte* payload, unsigned int length) {
-            this->parseAndDisplay((const char*)payload);
-        });
+            mqttClient->setCallback([this](char* topic, byte* payload, unsigned int length) {
+                String topicStr = String(topic);
+
+                String msg;
+                msg.reserve(length + 1);
+                for (unsigned int i = 0; i < length; i++) {
+                    msg += (char)payload[i];
+                }
+                msg.trim();
+
+                if (topicStr.equals(MQTT_TOPIC_TEXT)) {
+                    this->parseAndDisplay(msg.c_str());
+                } else if (topicStr.equals(MQTT_TOPIC_CLEAR)) {
+                    if (msg == "1" || msg.equalsIgnoreCase("true")) {
+                        displayManager.freeAllScrollLines();
+                        displayManager.clearAll();
+                    }
+                } else if (topicStr.equals(MQTT_TOPIC_BRIGHTNESS)) {
+                    int b = msg.toInt();
+                    if (b < 0) b = 0;
+                    if (b > 255) b = 255;
+                    displayManager.setBrightness((uint8_t)b);
+                } else {
+                    Serial.printf("Received message on unknown topic: %s\n", topic);
+                }
+            });
     }
 
     // 首次连接 WiFi
@@ -129,15 +152,18 @@ void WiFiManager::update() {
                 Serial.println("Attempting MQTT connection...");
                 String clientId = "ESP32-" + String(ESP.getEfuseMac(), HEX);
 
-                if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
-                    Serial.println("MQTT服务器已连接");
-                    mqttClient->subscribe(MQTT_TOPIC_TEXT);
-                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_TEXT);
-                    displayManager.setTextSize(1);
-                    displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor);
-                } else {
-                    Serial.printf("MQTT连接失败，错误码：%d\n", mqttClient->state());
-                }
+                    if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+                        Serial.println("MQTT服务器已连接");
+                        mqttClient->subscribe(MQTT_TOPIC_TEXT);
+                        Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_TEXT);
+                        mqttClient->subscribe(MQTT_TOPIC_CLEAR);
+                        Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_CLEAR);
+                        mqttClient->subscribe(MQTT_TOPIC_BRIGHTNESS);
+                        Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_BRIGHTNESS);
+                        displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor);
+                    } else {
+                        Serial.printf("MQTT连接失败，状态: %d\n", mqttClient->state());
+                    }
             }
         } else {
             mqttClient->loop();
