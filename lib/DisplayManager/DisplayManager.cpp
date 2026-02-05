@@ -265,9 +265,9 @@ void DisplayManager::setBrightness(uint8_t brightness) {
     }
 }
 
-void DisplayManager::displayText(const char *textContent, bool isScroll) {
-    // 单行模式：清空屏幕后显示文本（使用默认颜色和速度）
-    delay(50);
+void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_t color) {
+    // 单行模式：清空屏幕后显示文本
+    delay(30);
     freeAllScrollLines();
     clearAll();
 
@@ -297,8 +297,8 @@ void DisplayManager::displayText(const char *textContent, bool isScroll) {
         scrollLines[0].isActive = true;
         scrollLines[0].lastUpdateTime = millis();
     } else {
-        // 静态文本模式：支持自动换行，使用默认白色
-        dma_display->setTextColor(whiteColor);
+        // 静态文本模式：支持自动换行
+        dma_display->setTextColor(color);
         dma_display->setCursor(0, 0);
         dma_display->setTextWrap(true);
         dma_display->printlnUTF8(textContent);
@@ -307,20 +307,15 @@ void DisplayManager::displayText(const char *textContent, bool isScroll) {
 
 void DisplayManager::displayText(const char *textContent, bool isScroll, int line, int scrollSpeed, uint16_t color, ScrollDirection direction) {
     if (!isScroll) {
-        // 静态文本：清屏后显示，支持自动换行
-        delay(50);
-        freeAllScrollLines();
-        clearAll();
-        dma_display->setCursor(0, 0);
-        dma_display->setTextWrap(true);
-        dma_display->printlnUTF8(textContent);
+        // 静态文本
+        displayText(textContent, false, color);
         return;
     }
 
     // 滚动文本：在指定行显示，使用指定的速度、颜色和方向
     if (line < 1 || line > maxLines) line = 1;
 
-    delay(50);
+    delay(30);
     int index = line - 1;
 
     // 清除该行旧的滚动内容

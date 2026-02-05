@@ -65,8 +65,8 @@ public:
     void clearLine(uint16_t line);
     void setTextSize(int size);
     void setTextColor(uint16_t color);  // 设置静态文本颜色
-    void setBrightness(uint8_t brightness);
-    void displayText(const char *textContent, bool isScroll);  // 显示文本（清屏，默认白色、速度1）
+    void setBrightness(uint8_t brightness); // 设置亮度
+    void displayText(const char *textContent, bool isScroll, uint16_t color);  // 显示文本（清屏，默认速度1）
     void displayText(const char *textContent, bool isScroll, int line, int scrollSpeed = 1, uint16_t color = 0, ScrollDirection direction = SCROLL_LEFT);  // 显示文本（多行模式，完整参数）
     void clearScrollLine(int line);  // 清除指定行的滚动状态
     void setLineScrollSpeed(int line, int speed);  // 设置指定行的滚动速度

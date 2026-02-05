@@ -51,7 +51,8 @@
 #define MQTT_PORT 1883
 #define MQTT_USERNAME "minggo"
 #define MQTT_PASSWORD "123456"
-#define MQTT_TOPIC "LED/Text"
-
+#define MQTT_TOPIC_TEXT "LED/Text"
+#define MQTT_TOPIC_CLEAR "LED/Clear"
+#define MQTT_TOPIC_BRIGHTNESS "LED/Brightness"
 
 #endif

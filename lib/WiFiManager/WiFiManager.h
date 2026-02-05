@@ -24,11 +24,11 @@ private:
 
     // MQTT重连计时
     unsigned long lastMqttConnectAttempt;     // 上次尝试连接MQTT服务器的时间戳
-    const unsigned long mqttReconnectInterval = 5000;  // MQTT重连间隔（毫秒）
+    const unsigned long mqttReconnectInterval = 2000;  // MQTT重连间隔（毫秒）
 
     // WiFi重连计时
     unsigned long lastWiFiConnectAttempt;     // 上次尝试重连WiFi的时间戳（用于断线重连）
-    const unsigned long wifiReconnectInterval = 5000;  // WiFi重连间隔（毫秒）
+    const unsigned long wifiReconnectInterval = 2000;  // WiFi重连间隔（毫秒）
 
     // WiFi状态标志
     bool wifiInitialized;                     // WiFi模块是否已完成初始化
