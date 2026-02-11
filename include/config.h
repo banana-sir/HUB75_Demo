@@ -54,5 +54,6 @@
 #define MQTT_TOPIC_TEXT "LED/Text"
 #define MQTT_TOPIC_CLEAR "LED/Clear"
 #define MQTT_TOPIC_BRIGHTNESS "LED/Brightness"
+#define MQTT_TOPIC_IMAGE "LED/Image"
 
 #endif
