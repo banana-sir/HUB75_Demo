@@ -42,7 +42,7 @@ private:
     int textSize;              // 文本大小
     int maxLines;              // 最大行数
 
-    
+    void freeAllScrollLines();  // 释放所有滚动行内存
     void calculateScrollSpeedParams(int speed, int& xMove, int& timeDelay, ScrollDirection direction);  // 计算滚动速度参数
 
 public:
@@ -63,7 +63,7 @@ public:
     void clearAll();
     void clearArea(uint16_t x, uint16_t y, uint16_t width, uint16_t height);
     void clearLine(uint16_t line);
-    void freeAllScrollLines();  // 释放所有滚动行内存
+    
     void setTextSize(int size);  // 设置文本大小
     void setTextColor(uint16_t color);  // 设置静态文本颜色
     void setBrightness(uint8_t brightness); // 设置亮度

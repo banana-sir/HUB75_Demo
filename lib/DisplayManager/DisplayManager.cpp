@@ -221,6 +221,7 @@ void DisplayManager::setLineColor(int line, uint16_t color) {
 
 void DisplayManager::clearAll() {
     // 清除整个屏幕
+    freeAllScrollLines();
     dma_display->clearScreen();
 }
 
@@ -260,9 +261,8 @@ void DisplayManager::setTextColor(uint16_t color) {
 
 void DisplayManager::setBrightness(uint8_t brightness) {
     // 设置屏幕亮度
-    if (dma_display) {
-        dma_display->setBrightness(brightness);
-    }
+    dma_display->setBrightness(brightness);
+
 }
 
 void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_t color) {

@@ -2,6 +2,7 @@
 #include "WiFiManager.h"
 
 DisplayManager displayManager;
+WiFiManager wifiManager;
 
 void setup() {
   // put your setup code here, to run once:

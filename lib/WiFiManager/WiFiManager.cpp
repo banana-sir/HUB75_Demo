@@ -87,7 +87,6 @@ void WiFiManager::init() {
                     this->parseAndDisplay(msg.c_str());
                 } else if (topicStr.equals(MQTT_TOPIC_CLEAR)) {
                     if (msg == "1" || msg.equalsIgnoreCase("true")) {
-                        displayManager.freeAllScrollLines();
                         displayManager.clearAll();
                     }
                 } else if (topicStr.equals(MQTT_TOPIC_BRIGHTNESS)) {
@@ -444,5 +443,4 @@ void WiFiManager::sendResponse(int code, const char* type, const char* content) 
     webServer->send(code, type, content);
 }
 
-WiFiManager wifiManager;
 
