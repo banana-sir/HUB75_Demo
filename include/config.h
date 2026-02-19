@@ -3,7 +3,7 @@
 
 // HUB75E LED矩阵配置
 #define PANEL_RES_X 64      // LED矩阵宽度
-#define PANEL_RES_Y 32      // LED矩阵高度
+#define PANEL_RES_Y 64      // LED矩阵高度
 #define PANEL_CHAIN 1       // 矩阵链长度
 
 // GPIO引脚定义
@@ -17,13 +17,15 @@
 #define B_PIN 16
 #define C_PIN 17
 #define D_PIN 18
-#define E_PIN -1 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e. 
+#define E_PIN 47 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e. 
 #define LAT_PIN 13
 #define OE_PIN 14
 #define CLK_PIN 12
 
 
 #define DEFAULT_BRIGHTNESS 128  // 默认亮度 (0-255)
+
+
 
 // ============================================================================
 // 滚动文本配置
@@ -55,5 +57,7 @@
 #define MQTT_TOPIC_CLEAR "LED/Clear"
 #define MQTT_TOPIC_BRIGHTNESS "LED/Brightness"
 #define MQTT_TOPIC_IMAGE "LED/Image"
+
+#define MAX_MQTT_PAYLOAD_SIZE 16800  // MQTT消息最大载荷大小（字节）
 
 #endif

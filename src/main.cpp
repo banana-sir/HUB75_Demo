@@ -1,5 +1,6 @@
 #include "DisplayManager.h"
 #include "WiFiManager.h"
+#include "esp_task_wdt.h"
 
 DisplayManager displayManager;
 WiFiManager wifiManager;
@@ -22,7 +23,7 @@ void loop() {
   // 喂狗，防止看门狗复位
   esp_task_wdt_reset();
 
-  displayManager.update();
-  wifiManager.update();
+  displayManager.loop();
+  wifiManager.loop();
 }
 

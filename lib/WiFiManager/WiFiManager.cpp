@@ -1,5 +1,10 @@
 #include "WiFiManager.h"
 #include "../DisplayManager/DisplayManager.h"
+#include <WebServer.h>
+#include <DNSServer.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+#include "esp_task_wdt.h"
 
 WiFiManager::WiFiManager() :
     mqttClient(nullptr),
@@ -73,31 +78,41 @@ void WiFiManager::init() {
     if (!mqttClient) {
         mqttClient = new PubSubClient(wifiClient);
         mqttClient->setServer(MQTT_SERVER, MQTT_PORT);
-            mqttClient->setCallback([this](char* topic, byte* payload, unsigned int length) {
-                String topicStr = String(topic);
+        mqttClient->setBufferSize(MAX_MQTT_PAYLOAD_SIZE);
+        mqttClient->setCallback([this](char* topic, byte* payload, unsigned int length) {
+            String topicStr = String(topic);
 
-                String msg;
-                msg.reserve(length + 1);
-                for (unsigned int i = 0; i < length; i++) {
-                    msg += (char)payload[i];
-                }
-                msg.trim();
+            String msg;
+            msg.reserve(length + 1);
+            for (unsigned int i = 0; i < length; i++) {
+                msg += (char)payload[i];
+            }
+            msg.trim();
 
-                if (topicStr.equals(MQTT_TOPIC_TEXT)) {
-                    this->parseAndDisplay(msg.c_str());
-                } else if (topicStr.equals(MQTT_TOPIC_CLEAR)) {
-                    if (msg == "1" || msg.equalsIgnoreCase("true")) {
-                        displayManager.clearAll();
-                    }
-                } else if (topicStr.equals(MQTT_TOPIC_BRIGHTNESS)) {
-                    int b = msg.toInt();
-                    if (b < 0) b = 0;
-                    if (b > 255) b = 255;
-                    displayManager.setBrightness((uint8_t)b);
-                } else {
-                    Serial.printf("Received message on unknown topic: %s\n", topic);
+            if (topicStr.equals(MQTT_TOPIC_TEXT)) {
+                this->parseAndDisplayText(msg.c_str());
+            } else if (topicStr.equals(MQTT_TOPIC_CLEAR)) {
+                if (msg == "1" || msg.equalsIgnoreCase("true")) {
+                    displayManager.clearAll();
                 }
-            });
+            } else if (topicStr.equals(MQTT_TOPIC_BRIGHTNESS)) {
+                int b = msg.toInt();
+                if (b < 0) b = 0;
+                if (b > 255) b = 255;
+                displayManager.setBrightness((uint8_t)b);
+            } else if (topicStr.equals(MQTT_TOPIC_IMAGE)) {
+                // 处理图片显示，检查消息大小
+                if (length > MAX_MQTT_PAYLOAD_SIZE) {
+                    Serial.printf("警告：MQTT消息过大 %d 字节，超出限制 %d 字节\n", length, MAX_MQTT_PAYLOAD_SIZE);
+                    return;
+                }
+                Serial.printf("收到图片数据，大小：%d 字节\n", length);
+                // 直接传递原始payload，避免String处理问题
+                displayManager.displayImage((const char*)payload, length);
+            } else {
+                Serial.printf("Received message on unknown topic: %s\n", topic);
+            }
+        });
     }
 
     // 首次连接 WiFi
@@ -105,7 +120,7 @@ void WiFiManager::init() {
     wifiInitialized = true;
 }
 
-void WiFiManager::update() {
+void WiFiManager::loop() {
     // 处理配网模式下的Web服务器和DNS服务器
     if (isConfigMode && webServer) {
         webServer->handleClient();
@@ -149,20 +164,22 @@ void WiFiManager::update() {
             if (now - lastMqttConnectAttempt >= mqttReconnectInterval) {
                 lastMqttConnectAttempt = now;
                 Serial.println("Attempting MQTT connection...");
-                String clientId = "ESP32-" + String(ESP.getEfuseMac(), HEX);
-
-                    if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
-                        Serial.println("MQTT服务器已连接");
-                        mqttClient->subscribe(MQTT_TOPIC_TEXT);
-                        Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_TEXT);
-                        mqttClient->subscribe(MQTT_TOPIC_CLEAR);
-                        Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_CLEAR);
-                        mqttClient->subscribe(MQTT_TOPIC_BRIGHTNESS);
-                        Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_BRIGHTNESS);
-                        displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor);
-                    } else {
-                        Serial.printf("MQTT连接失败，状态: %d\n", mqttClient->state());
-                    }
+                String clientId = "ESP32/" + String(PANEL_RES_X) + 'x' + String(PANEL_RES_Y) + '-' + String(ESP.getEfuseMac(), HEX);
+                Serial.printf("Client ID: %s\n", clientId.c_str());
+                if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+                    Serial.println("MQTT服务器已连接");
+                    mqttClient->subscribe(MQTT_TOPIC_TEXT);
+                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_TEXT);
+                    mqttClient->subscribe(MQTT_TOPIC_CLEAR);
+                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_CLEAR);
+                    mqttClient->subscribe(MQTT_TOPIC_BRIGHTNESS);
+                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_BRIGHTNESS);
+                    mqttClient->subscribe(MQTT_TOPIC_IMAGE);
+                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_IMAGE);
+                    displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor);
+                } else {
+                    Serial.printf("MQTT连接失败，状态: %d\n", mqttClient->state());
+                }
             }
         } else {
             mqttClient->loop();
@@ -174,7 +191,7 @@ bool WiFiManager::isMqttConnected() {
     return mqttClient && mqttClient->connected();
 }
 
-void WiFiManager::parseAndDisplay(const char* payload) {
+void WiFiManager::parseAndDisplayText(const char* payload) {
     Serial.printf("Received MQTT message: %s\n", payload);
 
     // 解析 JSON
@@ -191,9 +208,11 @@ void WiFiManager::parseAndDisplay(const char* payload) {
     bool scrollMode = doc["scroll_mode"] | false;
     int fontSize = doc["font_size"] | 1;
     const char* colorHex = doc["color"] | "#FFFFFF";
-    int scrollLine = doc["scroll_line"] | 1;
+    int line = doc["line"] | 1;
+    bool wrap = doc["wrap"] | true; // 静态文本是否自动换行，默认 true
     int scrollSpeed = doc["scroll_speed"] | 1;
     int scrollDirection = doc["scroll_direction"] | 0;  // 0=向左，1=向右
+
 
     // 解析颜色
     uint16_t color = displayManager.whiteColor; // 默认白色
@@ -204,7 +223,7 @@ void WiFiManager::parseAndDisplay(const char* payload) {
         color = (r & 0xF8) << 8 | (g & 0xFC) << 3 | (b >> 3);
     }
 
-    Serial.printf("Text: %s, Scroll: %d, Size: %d, Line: %d, Speed: %d, Direction: %d\n", text, scrollMode, fontSize, scrollLine, scrollSpeed, scrollDirection);
+    Serial.printf("Text: %s, Scroll: %d, Color: %d, Size: %d, Line: %d, Wrap: %d, Speed: %d, Direction: %d\n", text, scrollMode, color, fontSize, line, wrap, scrollSpeed, scrollDirection);
 
     // 应用设置
     displayManager.setTextSize(fontSize);
@@ -212,8 +231,8 @@ void WiFiManager::parseAndDisplay(const char* payload) {
     // 转换方向：0=向左(SCROLL_LEFT)，其他=向右(SCROLL_RIGHT)
     DisplayManager::ScrollDirection direction = (scrollDirection == 0) ? DisplayManager::SCROLL_LEFT : DisplayManager::SCROLL_RIGHT;
 
-    // 使用一次调用完成显示，传入速度、颜色和方向
-    displayManager.displayText(text, scrollMode, scrollLine, scrollSpeed, color, direction);
+    // 传入参数并显示
+    displayManager.displayText(text, scrollMode, color, line, wrap, scrollSpeed, direction);
 
 }
 
@@ -239,7 +258,7 @@ void WiFiManager::startConfigMode() {
     displayManager.displayText("配网模式", false, displayManager.whiteColor);
     
     String apInfo = "请连接热点：" + String(AP_SSID);
-    displayManager.displayText(apInfo.c_str(), true, 2, 1, displayManager.whiteColor);
+    displayManager.displayText(apInfo.c_str(), true, displayManager.whiteColor, 2);
 
     // 初始化DNS服务器（Captive Portal）
     if (!dnsServer) {

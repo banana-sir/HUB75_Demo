@@ -2,11 +2,12 @@
 #define WIFI_MANAGER_H
 
 #include <WiFi.h>
-#include <WebServer.h>
-#include <DNSServer.h>
-#include <PubSubClient.h>
-#include <ArduinoJson.h>
 #include <Preferences.h>
+
+// 前置声明，减少头文件依赖，加快编译
+class WebServer;
+class DNSServer;
+class PubSubClient;
 
 
 class WiFiManager {
@@ -46,7 +47,7 @@ private:
     const byte DNS_PORT = 53;                // DNS服务器端口号
 
     // 私有方法
-    void parseAndDisplay(const char* payload);    // 解析MQTT消息并显示到LED屏幕
+    void parseAndDisplayText(const char* payload);    // 解析MQTT消息并显示到LED屏幕
     void connectWiFi();                          // 连接WiFi（使用已保存的配置）
     void startConfigMode();                      // 启动AP配网模式
     void handleRoot();                           // 处理根路径请求（返回配网页面）
@@ -60,7 +61,7 @@ public:
     ~WiFiManager();
 
     void init();                                   // 初始化WiFi管理器
-    void update();                                 // 在loop中调用，处理WiFi/MQTT连接和配网
+    void loop();                                 // 在loop中调用，处理WiFi/MQTT连接和配网
     bool isMqttConnected();                        // 检查MQTT是否已连接
     bool isWiFiConnecting() const { return isConnecting; }       // 检查是否正在连接WiFi
     bool isInConfigMode() const { return isConfigMode; }         // 检查是否处于配网模式

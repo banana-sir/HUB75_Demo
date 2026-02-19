@@ -1,4 +1,6 @@
 #include "DisplayManager.h"
+#include <base64.hpp>
+#include "esp_task_wdt.h"
 
 
 DisplayManager::DisplayManager() :
@@ -50,7 +52,7 @@ void DisplayManager::init() {
     }
 }
 
-void DisplayManager::update() {
+void DisplayManager::loop() {
     unsigned long now = millis();
 
     // 检查是否有任何滚动行需要更新
@@ -230,6 +232,49 @@ void DisplayManager::clearArea(uint16_t x, uint16_t y, uint16_t width, uint16_t 
     dma_display->fillRect(x, y, width, height, blackColor);
 }
 
+int DisplayManager::calculateTextLines(const char *textContent, int startLine) {
+    // 计算文本需要占用的行数（用于自动换行场景）
+    if (textContent == nullptr || strlen(textContent) == 0) {
+        return 1;
+    }
+
+    int charWidth = 8 * textSize;  // 英文字符宽度
+    int lineWidth = PANEL_RES_X;   // 屏幕宽度
+    int currentLine = 0;
+    int currentWidth = 0;
+
+    for (int i = 0; textContent[i] != '\0'; ) {
+        // 判断是中文字符还是ASCII字符
+        if ((textContent[i] & 0x80) != 0) {
+            // 中文字符（UTF-8编码，占3字节），宽度是英文字符的2倍
+            currentWidth += charWidth * 2;
+            i += 3;
+        } else if (textContent[i] == '\n') {
+            // 手动换行
+            currentLine++;
+            currentWidth = 0;
+            i++;
+        } else {
+            // ASCII字符
+            currentWidth += charWidth;
+            i++;
+        }
+
+        // 检查是否需要自动换行
+        if (currentWidth > lineWidth && textContent[i-1] != '\n') {
+            currentLine++;
+            currentWidth = (textContent[i-1] & 0x80) != 0 ? charWidth * 2 : charWidth;
+        }
+    }
+
+    // 加上最后一行
+    if (currentWidth > 0 || currentLine == 0) {
+        currentLine++;
+    }
+
+    return currentLine;
+}
+
 void DisplayManager::clearLine(uint16_t line) {
     // 清除指定行（line从1开始）
     dma_display->fillRect(0, (line-1) * textSize * 16, PANEL_RES_X, textSize * 16, blackColor);
@@ -265,62 +310,53 @@ void DisplayManager::setBrightness(uint8_t brightness) {
 
 }
 
-void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_t color) {
-    // 单行模式：清空屏幕后显示文本
-    delay(30);
-    freeAllScrollLines();
-    clearAll();
+void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_t color, int line, bool autoWrap, int scrollSpeed, ScrollDirection direction) {
+    // 通用显示函数：既支持静态也支持滚动。
+    // 约定：当 line <= 0 时，视为全屏静态显示；否则在指定行进行显示。
 
-    if (isScroll) {
-        // 滚动模式：在第一行设置滚动文本，使用默认速度 1（慢速），向左滚动
-        dma_display->setTextWrap(false);
-        int len = strlen(textContent) + 1;
-        if (scrollLines[0].content != nullptr) {
-            free(scrollLines[0].content);
-        }
-        scrollLines[0].content = (char *)malloc(len * sizeof(char));
-        if (scrollLines[0].content != nullptr) {
-            strcpy(scrollLines[0].content, textContent);
-        }
-
-        // 设置默认速度参数（慢速）和方向（向左）
-        int xMove, timeDelay;
-        calculateScrollSpeedParams(1, xMove, timeDelay, SCROLL_LEFT);
-        scrollLines[0].scrollSpeed = 1;
-        scrollLines[0].scrollDirection = SCROLL_LEFT;
-        scrollLines[0].scrollXMove = xMove;
-        scrollLines[0].scrollTimeDelay = timeDelay;
-        scrollLines[0].color = whiteColor;
-        scrollLines[0].xPosition = PANEL_RES_X;
-        scrollLines[0].yPosition = 0;
-        scrollLines[0].isScrolling = true;
-        scrollLines[0].isActive = true;
-        scrollLines[0].lastUpdateTime = millis();
-    } else {
-        // 静态文本模式：支持自动换行
-        dma_display->setTextColor(color);
-        dma_display->setCursor(0, 0);
-        dma_display->setTextWrap(true);
-        dma_display->printlnUTF8(textContent);
-    }
-}
-
-void DisplayManager::displayText(const char *textContent, bool isScroll, int line, int scrollSpeed, uint16_t color, ScrollDirection direction) {
+    // 静态文本：根据 autoWrap 决定是否启用自动换行（并在需要时清屏/清行）
     if (!isScroll) {
-        // 静态文本
-        displayText(textContent, false, color);
-        return;
+        if (line <= 0) {
+            // 全屏显示
+            freeAllScrollLines();
+            clearAll();
+            dma_display->setTextColor((color != 0) ? color : whiteColor);
+            dma_display->setCursor(0, 0);
+            dma_display->setTextWrap(autoWrap);
+            dma_display->printlnUTF8(textContent);
+            return;
+        } else {
+            // 指定行显示：根据 autoWrap 决定清除区域
+            int yPosition = (line - 1) * textSize * 16;
+
+            if (autoWrap) {
+                // 自动换行时，计算文本需要占用的行数并清除相应区域
+                int textLines = calculateTextLines(textContent, line);
+                int height = textLines * textSize * 16;
+                dma_display->fillRect(0, yPosition, PANEL_RES_X, height, blackColor);
+            } else {
+                // 不自动换行时，只清除当前行
+                clearLine(line);
+            }
+
+            dma_display->setTextColor((color != 0) ? color : whiteColor);
+            dma_display->setCursor(0, yPosition);
+            dma_display->setTextWrap(autoWrap);
+            dma_display->printlnUTF8(textContent);
+            return;
+        }
     }
 
     // 滚动文本：在指定行显示，使用指定的速度、颜色和方向
     if (line < 1 || line > maxLines) line = 1;
 
-    delay(30);
+    //delay(30);
     int index = line - 1;
 
     // 清除该行旧的滚动内容
     if (scrollLines[index].content != nullptr) {
         free(scrollLines[index].content);
+        scrollLines[index].content = nullptr;
     }
 
     // 清除指定行区域
@@ -334,7 +370,7 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, int lin
         strcpy(scrollLines[index].content, textContent);
     }
 
-    // 设置该行的颜色（如果未指定颜色，则使用当前文本颜色）
+    // 设置该行的颜色（如果未指定颜色，则使用白色）
     scrollLines[index].color = (color != 0) ? color : whiteColor;
     scrollLines[index].scrollDirection = direction;
 
@@ -361,4 +397,68 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, int lin
     scrollLines[index].isScrolling = true;
     scrollLines[index].isActive = true;
     scrollLines[index].lastUpdateTime = millis();
+}
+
+void DisplayManager::displayImage(const char *base64Data, int length) {
+    if (base64Data == nullptr || length == 0) {
+        Serial.println("displayImage: 数据为空");
+        return;
+    }
+
+    // 计算base64解码后的数据大小
+    unsigned int decodedLen = decode_base64_length((const unsigned char*)base64Data, length);
+
+    Serial.printf("displayImage: base64输入 %d 字节, 预计解码 %d 字节\n", length, decodedLen);
+
+    int imageSize = PANEL_RES_X * PANEL_RES_Y * 2;  // rgb565每个像素2字节
+    Serial.printf("displayImage: 期望图像大小 %d 字节 (%dx%d)\n", imageSize, PANEL_RES_X, PANEL_RES_Y);
+
+    if (decodedLen == 0) {
+        Serial.println("displayImage: base64数据无效");
+        return;
+    }
+
+    // 分配内存
+    uint8_t *decodedData = (uint8_t *)malloc(decodedLen);
+    if (decodedData == nullptr) {
+        Serial.println("displayImage: 内存分配失败");
+        return;
+    }
+
+    // 解码base64数据
+    decode_base64((const unsigned char*)base64Data, length, decodedData);
+    Serial.printf("displayImage: 解码完成\n");
+
+    // 计算图像尺寸
+    int dataSize = min((int)decodedLen, imageSize);
+    int pixelCount = dataSize / 2;
+
+    // 清屏并停止所有滚动
+    freeAllScrollLines();
+    dma_display->clearScreen();
+
+    // 将rgb565数据绘制到屏幕
+    for (int i = 0; i < pixelCount; i++) {
+        int x = i % PANEL_RES_X;
+        int y = i / PANEL_RES_X;
+
+        // 直接使用rgb565数据（大端序）
+        uint16_t color = ((uint16_t)decodedData[i * 2] << 8) | decodedData[i * 2 + 1];
+
+        dma_display->drawPixel(x, y, color);
+
+        // 每128个像素喂狗一次，避免看门狗超时
+        if (i % 128 == 0) {
+            esp_task_wdt_reset();
+        }
+    }
+
+    Serial.printf("displayImage: 已绘制 %d 像素\n", pixelCount);
+
+    // 刷新屏幕
+    dma_display->flipDMABuffer();
+    Serial.println("displayImage: 屏幕刷新完成");
+
+    // 释放内存
+    free(decodedData);
 }
