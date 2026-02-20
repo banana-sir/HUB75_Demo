@@ -58,6 +58,6 @@
 #define MQTT_TOPIC_BRIGHTNESS "LED/Brightness"
 #define MQTT_TOPIC_IMAGE "LED/Image"
 
-#define MAX_MQTT_PAYLOAD_SIZE 16800  // MQTT消息最大载荷大小（字节）
+#define MAX_MQTT_PAYLOAD_SIZE 12800  // MQTT消息最大载荷大小（字节）
 
 #endif

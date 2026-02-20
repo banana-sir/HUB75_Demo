@@ -46,8 +46,13 @@ private:
     // DNS配置
     const byte DNS_PORT = 53;                // DNS服务器端口号
 
+    // MQTT客户端标识
+    String clientId;                          // 当前设备的MQTT ClientId，用于验证图片消息的目标
+
     // 私有方法
-    void parseAndDisplayText(const char* payload);    // 解析MQTT消息并显示到LED屏幕
+    void mqttCallback(char* topic, byte* payload, unsigned int length);  // MQTT回调函数，处理接收到的消息
+    void parseAndDisplayText(const char* payload);    // 解析MQTT文本消息并显示到LED屏幕
+    void parseAndDisplayImage(byte* payload, unsigned int length);  // 解析MQTT图片消息并显示到LED屏幕
     void connectWiFi();                          // 连接WiFi（使用已保存的配置）
     void startConfigMode();                      // 启动AP配网模式
     void handleRoot();                           // 处理根路径请求（返回配网页面）

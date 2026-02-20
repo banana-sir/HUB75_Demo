@@ -74,44 +74,17 @@ void WiFiManager::init() {
     // 初始化 Preferences (用于保存WiFi配置)
     preferences.begin("wifi_config", false);
 
+    // 生成并保存 MQTT ClientId
+    clientId = "ESP32/" + String(PANEL_RES_X) + 'x' + String(PANEL_RES_Y) + '-' + String(ESP.getEfuseMac(), HEX);
+    Serial.printf("MQTT ClientId: %s\n", clientId.c_str());
+
     // 初始化 MQTT 客户端
     if (!mqttClient) {
         mqttClient = new PubSubClient(wifiClient);
         mqttClient->setServer(MQTT_SERVER, MQTT_PORT);
         mqttClient->setBufferSize(MAX_MQTT_PAYLOAD_SIZE);
         mqttClient->setCallback([this](char* topic, byte* payload, unsigned int length) {
-            String topicStr = String(topic);
-
-            String msg;
-            msg.reserve(length + 1);
-            for (unsigned int i = 0; i < length; i++) {
-                msg += (char)payload[i];
-            }
-            msg.trim();
-
-            if (topicStr.equals(MQTT_TOPIC_TEXT)) {
-                this->parseAndDisplayText(msg.c_str());
-            } else if (topicStr.equals(MQTT_TOPIC_CLEAR)) {
-                if (msg == "1" || msg.equalsIgnoreCase("true")) {
-                    displayManager.clearAll();
-                }
-            } else if (topicStr.equals(MQTT_TOPIC_BRIGHTNESS)) {
-                int b = msg.toInt();
-                if (b < 0) b = 0;
-                if (b > 255) b = 255;
-                displayManager.setBrightness((uint8_t)b);
-            } else if (topicStr.equals(MQTT_TOPIC_IMAGE)) {
-                // 处理图片显示，检查消息大小
-                if (length > MAX_MQTT_PAYLOAD_SIZE) {
-                    Serial.printf("警告：MQTT消息过大 %d 字节，超出限制 %d 字节\n", length, MAX_MQTT_PAYLOAD_SIZE);
-                    return;
-                }
-                Serial.printf("收到图片数据，大小：%d 字节\n", length);
-                // 直接传递原始payload，避免String处理问题
-                displayManager.displayImage((const char*)payload, length);
-            } else {
-                Serial.printf("Received message on unknown topic: %s\n", topic);
-            }
+            this->mqttCallback(topic, payload, length);
         });
     }
 
@@ -164,8 +137,6 @@ void WiFiManager::loop() {
             if (now - lastMqttConnectAttempt >= mqttReconnectInterval) {
                 lastMqttConnectAttempt = now;
                 Serial.println("Attempting MQTT connection...");
-                String clientId = "ESP32/" + String(PANEL_RES_X) + 'x' + String(PANEL_RES_Y) + '-' + String(ESP.getEfuseMac(), HEX);
-                Serial.printf("Client ID: %s\n", clientId.c_str());
                 if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
                     Serial.println("MQTT服务器已连接");
                     mqttClient->subscribe(MQTT_TOPIC_TEXT);
@@ -189,6 +160,36 @@ void WiFiManager::loop() {
 
 bool WiFiManager::isMqttConnected() {
     return mqttClient && mqttClient->connected();
+}
+
+void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) {
+    String topicStr = String(topic);
+
+    String msg;
+    msg.reserve(length + 1);
+    for (unsigned int i = 0; i < length; i++) {
+        msg += (char)payload[i];
+    }
+    msg.trim();
+
+    if (topicStr.equals(MQTT_TOPIC_TEXT)) {
+        this->parseAndDisplayText(msg.c_str());
+    } else if (topicStr.equals(MQTT_TOPIC_CLEAR)) {
+        if (msg == "1" || msg.equalsIgnoreCase("true")) {
+            displayManager.clearAll();
+        }
+    } else if (topicStr.equals(MQTT_TOPIC_BRIGHTNESS)) {
+        int b = msg.toInt();
+        if (b < 0) b = 0;
+        if (b > 255) b = 255;
+        displayManager.setBrightness((uint8_t)b);
+    } else if (topicStr.equals(MQTT_TOPIC_IMAGE)) {
+        // 图片消息直接传递原始 payload，避免大 JSON 文档在栈上分配
+        this->parseAndDisplayImage(payload, length);
+    } else {
+        Serial.printf("未知主题: %s\n", topic);
+    }
+
 }
 
 void WiFiManager::parseAndDisplayText(const char* payload) {
@@ -234,6 +235,89 @@ void WiFiManager::parseAndDisplayText(const char* payload) {
     // 传入参数并显示
     displayManager.displayText(text, scrollMode, color, line, wrap, scrollSpeed, direction);
 
+}
+
+void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
+    Serial.printf("收到图片MQTT消息，大小: %d 字节\n", length);
+
+    // 检查消息大小
+    if (length > MAX_MQTT_PAYLOAD_SIZE) {
+        Serial.printf("警告：MQTT消息过大 %d 字节，超出限制 %d 字节\n", length, MAX_MQTT_PAYLOAD_SIZE);
+        return;
+    }
+
+    // 在原始 payload 中查找 target 字段，避免大 JSON 解析
+    const char* payloadStr = (const char*)payload;
+
+    // 查找 "target" 字段
+    const char* targetStart = strstr(payloadStr, "\"target\":");
+    if (targetStart == nullptr) {
+        Serial.println("图片消息缺少 target 字段");
+        return;
+    }
+
+    // 跳过 "target":
+    targetStart += 9;
+
+    // 查找引号开始
+    if (*targetStart != '"') {
+        Serial.println("图片消息的 target 字段格式错误");
+        return;
+    }
+    const char* targetValueStart = targetStart + 1;
+
+    // 查找引号结束
+    const char* targetValueEnd = strchr(targetValueStart, '"');
+    if (targetValueEnd == nullptr) {
+        Serial.println("图片消息的 target 字段格式错误");
+        return;
+    }
+
+    // 提取 target 值
+    size_t targetLength = targetValueEnd - targetValueStart;
+    String targetStr = String(targetValueStart, targetLength);
+
+    // 检查目标是否匹配当前设备或通配符（根据分辨率动态生成）
+    String allDevicesTarget = "All_" + String(PANEL_RES_X) + "x" + String(PANEL_RES_Y);
+
+    if (!targetStr.equals(clientId) && !targetStr.equals(allDevicesTarget)) {
+        Serial.printf("图片消息目标不匹配: 收到=%s, 当前ClientId=%s, 通配符=%s\n", targetStr.c_str(), clientId.c_str(), allDevicesTarget.c_str());
+        return;
+    }
+
+    Serial.printf("图片消息目标匹配: %s\n", targetStr.c_str());
+
+    // 在原始 payload 中查找 image_base64 字段的起始位置
+    const char* imageBase64Start = strstr(payloadStr, "\"image_base64\":\"");
+
+    if (imageBase64Start == nullptr) {
+        Serial.println("图片消息缺少 image_base64 字段");
+        return;
+    }
+
+    // 跳过字段名称和引号
+    imageBase64Start += 16;  // 跳过 "\"image_base64\":\""
+
+    // 查找结束引号
+    const char* imageBase64End = strchr(imageBase64Start, '"');
+
+    if (imageBase64End == nullptr) {
+        Serial.println("图片消息的 image_base64 字段格式错误");
+        return;
+    }
+
+    // 计算base64数据长度
+    int imageLength = imageBase64End - imageBase64Start;
+    Serial.printf("收到图片数据，base64长度: %d 字节\n", imageLength);
+
+    // 检查base64数据大小是否超过限制
+    if (imageLength > MAX_MQTT_PAYLOAD_SIZE) {
+        Serial.printf("警告：base64数据过大 %d 字节，超出限制 %d 字节\n", imageLength, MAX_MQTT_PAYLOAD_SIZE);
+        return;
+    }
+
+    // 调用 displayImage 显示图片
+    displayManager.displayImage(imageBase64Start, imageLength);
 }
 
 void WiFiManager::startConfigMode() {
