@@ -15,11 +15,13 @@ WiFiManager::WiFiManager() :
     dnsServer(nullptr),
     lastMqttConnectAttempt(0),
     lastWiFiConnectAttempt(0),
+    mqttFailCount(0),
     wifiInitialized(false),
     isConnecting(false),
     connectionStatusDisplayed(false),
     isConfigMode(false),
-    connectStartTime(0) {
+    connectStartTime(0),
+    mqttWasConnected(false) {
 }
 
 WiFiManager::~WiFiManager() {
@@ -133,13 +135,15 @@ void WiFiManager::loop() {
         }
     }
 
-    // 检查 MQTT 连接（需要在 WiFi 连接成功后）
-    if (WiFi.status() == WL_CONNECTED) {
+    // 检查 MQTT 连接（需要在 WiFi 连接成功后且不在重连过程中）
+    if (WiFi.status() == WL_CONNECTED && !isConnecting) {
         if (!mqttClient->connected()) {
             unsigned long now = millis();
             if (now - lastMqttConnectAttempt >= mqttReconnectInterval) {
                 lastMqttConnectAttempt = now;
-                Serial.println("Attempting MQTT connection...");
+                Serial.printf("Attempting MQTT connection to %s:%d... (失败次数: %d/%d)\n",
+                             MQTT_SERVER, MQTT_PORT, mqttFailCount, maxMqttFailCount);
+
                 if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
                     Serial.println("MQTT服务器已连接");
                     mqttClient->subscribe(MQTT_TOPIC_TEXT);
@@ -151,12 +155,39 @@ void WiFiManager::loop() {
                     mqttClient->subscribe(MQTT_TOPIC_IMAGE);
                     Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_IMAGE);
                     displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor);
+
+                    // 连接成功，重置失败计数
+                    mqttFailCount = 0;
+                    mqttWasConnected = true;
                 } else {
-                    Serial.printf("MQTT连接失败，状态: %d\n", mqttClient->state());
+                    int state = mqttClient->state();
+                    mqttFailCount++;
+                    Serial.printf("MQTT连接失败，状态: %d\n", state);
+
+                    // 如果失败3次，强制触发WiFi重连（可能是DNS或网络问题）
+                    if (mqttFailCount >= maxMqttFailCount) {
+                        Serial.printf("MQTT连续失败 %d 次，触发WiFi重连\n", maxMqttFailCount);
+                        mqttFailCount = 0;
+
+                        // 断开WiFi连接，触发重连
+                        WiFi.disconnect();
+                        delay(500);
+                        isConnecting = true;
+                        connectionStatusDisplayed = false;
+                        connectStartTime = millis();
+                        connectWiFi();
+                    }
                 }
             }
         } else {
             mqttClient->loop();
+        }
+    } else {
+        // WiFi断开时，重置MQTT状态
+        if (mqttWasConnected) {
+            Serial.println("WiFi断开，MQTT连接已断开");
+            mqttWasConnected = false;
+            mqttFailCount = 0;
         }
     }
 }

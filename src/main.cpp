@@ -10,8 +10,6 @@ TaskHandle_t wifiTaskHandle = NULL;
 
 // WiFi/MQTT 任务函数（运行在 Core 0）
 void wifiTaskFunction(void *pvParameters) {
-  Serial.println("WiFi/MQTT 任务已启动，运行在 Core 0");
-
   for (;;) {
     wifiManager.loop();
     vTaskDelay(1);  // 让出 CPU，避免忙等待

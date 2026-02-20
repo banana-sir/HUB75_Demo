@@ -26,6 +26,8 @@ private:
     // MQTT重连计时
     unsigned long lastMqttConnectAttempt;     // 上次尝试连接MQTT服务器的时间戳
     const unsigned long mqttReconnectInterval = 2000;  // MQTT重连间隔（毫秒）
+    int mqttFailCount;                        // MQTT连接失败次数
+    const int maxMqttFailCount = 5;            // 最大失败次数，超过则触发WiFi重连
 
     // WiFi重连计时
     unsigned long lastWiFiConnectAttempt;     // 上次尝试重连WiFi的时间戳（用于断线重连）
@@ -48,6 +50,9 @@ private:
 
     // MQTT客户端标识
     String clientId;                          // 当前设备的MQTT ClientId，用于验证图片消息的目标
+
+    // MQTT 状态跟踪
+    bool mqttWasConnected;                    // MQTT之前是否已连接过
 
     // 私有方法
     void mqttCallback(char* topic, byte* payload, unsigned int length);  // MQTT回调函数，处理接收到的消息
