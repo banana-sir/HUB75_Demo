@@ -53,6 +53,11 @@ void DisplayManager::init() {
 }
 
 void DisplayManager::loop() {
+    // 检查 DMA 显示和滚动行数组是否已初始化
+    if (dma_display == nullptr || scrollLines == nullptr) {
+        return;
+    }
+
     unsigned long now = millis();
 
     // 检查是否有任何滚动行需要更新
@@ -223,12 +228,14 @@ void DisplayManager::setLineColor(int line, uint16_t color) {
 
 void DisplayManager::clearAll() {
     // 清除整个屏幕
+    if (dma_display == nullptr) return;
     freeAllScrollLines();
     dma_display->clearScreen();
 }
 
 void DisplayManager::clearArea(uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
     // 清除指定区域
+    if (dma_display == nullptr) return;
     dma_display->fillRect(x, y, width, height, blackColor);
 }
 
@@ -277,10 +284,12 @@ int DisplayManager::calculateTextLines(const char *textContent, int startLine) {
 
 void DisplayManager::clearLine(uint16_t line) {
     // 清除指定行（line从1开始）
+    if (dma_display == nullptr) return;
     dma_display->fillRect(0, (line-1) * textSize * 16, PANEL_RES_X, textSize * 16, blackColor);
 }
 
 void DisplayManager::setTextSize(int size) {
+    if (dma_display == nullptr) return;
     textSize = size;
     dma_display->setTextSize(textSize);
 
@@ -301,11 +310,13 @@ void DisplayManager::setTextSize(int size) {
 
 void DisplayManager::setTextColor(uint16_t color) {
     // 仅用于设置静态文本颜色
+    if (dma_display == nullptr) return;
     dma_display->setTextColor(color);
 }
 
 void DisplayManager::setBrightness(uint8_t brightness) {
     // 设置屏幕亮度
+    if (dma_display == nullptr) return;
     dma_display->setBrightness(brightness);
 
 }

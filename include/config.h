@@ -32,7 +32,7 @@
 // ============================================================================
 
 // 滚动文本延迟（ms）- 当前各速度档位统一使用相同值
-#define SCROLL_TIME_DELAY 30
+#define SCROLL_TIME_DELAY 36
 
 // 滚动文本像素偏移（负值表示向左滚动）
 #define SCROLL_OFFSET_LEFT_LOW -1

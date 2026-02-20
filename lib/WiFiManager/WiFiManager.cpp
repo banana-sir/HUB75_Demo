@@ -6,6 +6,9 @@
 #include <ArduinoJson.h>
 #include "esp_task_wdt.h"
 
+// 外部声明：跨核访问保护
+extern portMUX_TYPE displayMux;
+
 WiFiManager::WiFiManager() :
     mqttClient(nullptr),
     webServer(nullptr),
@@ -189,7 +192,6 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
     } else {
         Serial.printf("未知主题: %s\n", topic);
     }
-
 }
 
 void WiFiManager::parseAndDisplayText(const char* payload) {
