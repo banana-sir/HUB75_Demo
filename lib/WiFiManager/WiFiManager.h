@@ -56,6 +56,7 @@ private:
 
     // 私有方法
     void mqttCallback(char* topic, byte* payload, unsigned int length);  // MQTT回调函数，处理接收到的消息
+    bool checkTarget(const char* payload);  // 检查消息的target字段是否匹配当前设备
     void parseAndDisplayText(const char* payload);    // 解析MQTT文本消息并显示到LED屏幕
     void parseAndDisplayImage(byte* payload, unsigned int length);  // 解析MQTT图片消息并显示到LED屏幕
     void connectWiFi();                          // 连接WiFi（使用已保存的配置）

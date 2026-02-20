@@ -22,10 +22,7 @@
 #define OE_PIN 14
 #define CLK_PIN 12
 
-
 #define DEFAULT_BRIGHTNESS 128  // 默认亮度 (0-255)
-
-
 
 // ============================================================================
 // 滚动文本配置
@@ -45,14 +42,13 @@
 // ============================================================================
 // WiFi 和 MQTT 配置
 // ============================================================================
-// #define WIFI_SSID "helloworld"
-// #define WIFI_PASSWORD "15819652435"
 #define AP_SSID "ESP32-LED-Matrix"
 
 #define MQTT_SERVER "zheng241.xyz"
 #define MQTT_PORT 1883
 #define MQTT_USERNAME "minggo"
 #define MQTT_PASSWORD "123456"
+
 #define MQTT_TOPIC_TEXT "LED/Text"
 #define MQTT_TOPIC_CLEAR "LED/Clear"
 #define MQTT_TOPIC_BRIGHTNESS "LED/Brightness"

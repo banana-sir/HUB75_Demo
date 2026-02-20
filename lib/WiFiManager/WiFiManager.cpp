@@ -80,7 +80,7 @@ void WiFiManager::init() {
     preferences.begin("wifi_config", false);
 
     // 生成并保存 MQTT ClientId
-    clientId = "ESP32/" + String(PANEL_RES_X) + 'x' + String(PANEL_RES_Y) + '-' + String(ESP.getEfuseMac(), HEX);
+    clientId = "ESP32/" + String(PANEL_RES_X) + 'x' + String(PANEL_RES_Y) + '/' + String(ESP.getEfuseMac(), HEX);
     Serial.printf("MQTT ClientId: %s\n", clientId.c_str());
 
     // 初始化 MQTT 客户端
@@ -209,11 +209,40 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
     if (topicStr.equals(MQTT_TOPIC_TEXT)) {
         this->parseAndDisplayText(msg.c_str());
     } else if (topicStr.equals(MQTT_TOPIC_CLEAR)) {
-        if (msg == "1" || msg.equalsIgnoreCase("true")) {
+        // 先检查target字段
+        if (!checkTarget(msg.c_str())) {
+            return;
+        }
+
+        // 解析 JSON
+        StaticJsonDocument<64> doc;
+        DeserializationError error = deserializeJson(doc, msg.c_str());
+
+        if (error) {
+            Serial.printf("Clear消息JSON解析失败: %s\n", error.c_str());
+            return;
+        }
+
+        bool clear = doc["clear"] | false;
+        if (clear) {
             displayManager.clearAll();
         }
     } else if (topicStr.equals(MQTT_TOPIC_BRIGHTNESS)) {
-        int b = msg.toInt();
+        // 先检查target字段
+        if (!checkTarget(msg.c_str())) {
+            return;
+        }
+
+        // 解析 JSON
+        StaticJsonDocument<64> doc;
+        DeserializationError error = deserializeJson(doc, msg.c_str());
+
+        if (error) {
+            Serial.printf("Brightness消息JSON解析失败: %s\n", error.c_str());
+            return;
+        }
+
+        int b = doc["brightness"] | 128;
         if (b < 0) b = 0;
         if (b > 255) b = 255;
         displayManager.setBrightness((uint8_t)b);
@@ -225,15 +254,66 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
     }
 }
 
+bool WiFiManager::checkTarget(const char* payload) {
+    // 使用字符串查找来快速提取target字段，避免完整JSON解析
+    const char* targetStart = strstr(payload, "\"target\":");
+    if (targetStart == nullptr) {
+        Serial.println("消息缺少 target 字段");
+        return false;
+    }
+
+    // 跳过 "target":
+    targetStart += 9;
+
+    // 跳过冒号后的空格（如果有）
+    while (*targetStart == ' ') {
+        targetStart++;
+    }
+
+    // 查找引号开始
+    if (*targetStart != '"') {
+        Serial.println("target 字段格式错误");
+        return false;
+    }
+    const char* targetValueStart = targetStart + 1;
+
+    // 查找引号结束
+    const char* targetValueEnd = strchr(targetValueStart, '"');
+    if (targetValueEnd == nullptr) {
+        Serial.println("target 字段格式错误");
+        return false;
+    }
+
+    // 提取 target 值
+    size_t targetLength = targetValueEnd - targetValueStart;
+    String targetStr = String(targetValueStart, targetLength);
+
+    // 检查目标是否匹配当前设备或通配符（根据分辨率动态生成）
+    String allDevicesTarget = "All_" + String(PANEL_RES_X) + "x" + String(PANEL_RES_Y);
+
+    if (!targetStr.equals(clientId) && !targetStr.equals(allDevicesTarget)) {
+        Serial.printf("目标不匹配: 收到=%s, 当前ClientId=%s, 通配符=%s\n", targetStr.c_str(), clientId.c_str(), allDevicesTarget.c_str());
+        return false;
+    }
+
+    Serial.printf("目标匹配: %s\n", targetStr.c_str());
+    return true;
+}
+
 void WiFiManager::parseAndDisplayText(const char* payload) {
-    Serial.printf("Received MQTT message: %s\n", payload);
+    Serial.printf("收到文本MQTT消息\n");
+
+    // 先检查target字段，提高效率
+    if (!checkTarget(payload)) {
+        return;
+    }
 
     // 解析 JSON
     StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, payload);
 
     if (error) {
-        Serial.printf("JSON parsing failed: %s\n", error.c_str());
+        Serial.printf("JSON解析失败: %s\n", error.c_str());
         return;
     }
 
@@ -279,46 +359,11 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
         return;
     }
 
-    // 在原始 payload 中查找 target 字段，避免大 JSON 解析
+    // 先检查target字段，提高效率
     const char* payloadStr = (const char*)payload;
-
-    // 查找 "target" 字段
-    const char* targetStart = strstr(payloadStr, "\"target\":");
-    if (targetStart == nullptr) {
-        Serial.println("图片消息缺少 target 字段");
+    if (!checkTarget(payloadStr)) {
         return;
     }
-
-    // 跳过 "target":
-    targetStart += 9;
-
-    // 查找引号开始
-    if (*targetStart != '"') {
-        Serial.println("图片消息的 target 字段格式错误");
-        return;
-    }
-    const char* targetValueStart = targetStart + 1;
-
-    // 查找引号结束
-    const char* targetValueEnd = strchr(targetValueStart, '"');
-    if (targetValueEnd == nullptr) {
-        Serial.println("图片消息的 target 字段格式错误");
-        return;
-    }
-
-    // 提取 target 值
-    size_t targetLength = targetValueEnd - targetValueStart;
-    String targetStr = String(targetValueStart, targetLength);
-
-    // 检查目标是否匹配当前设备或通配符（根据分辨率动态生成）
-    String allDevicesTarget = "All_" + String(PANEL_RES_X) + "x" + String(PANEL_RES_Y);
-
-    if (!targetStr.equals(clientId) && !targetStr.equals(allDevicesTarget)) {
-        Serial.printf("图片消息目标不匹配: 收到=%s, 当前ClientId=%s, 通配符=%s\n", targetStr.c_str(), clientId.c_str(), allDevicesTarget.c_str());
-        return;
-    }
-
-    Serial.printf("图片消息目标匹配: %s\n", targetStr.c_str());
 
     // 在原始 payload 中查找 image_base64 字段的起始位置
     const char* imageBase64Start = strstr(payloadStr, "\"image_base64\":\"");
