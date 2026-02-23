@@ -46,7 +46,7 @@
 
 #define MQTT_SERVER "zheng241.xyz"
 #define MQTT_PORT 1883
-#define MQTT_USERNAME "minggo"
+#define MQTT_USERNAME "64x64esp32"
 #define MQTT_PASSWORD "123456"
 
 #define MQTT_TOPIC_TEXT "LED/Text"

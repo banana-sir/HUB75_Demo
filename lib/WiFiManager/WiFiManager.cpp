@@ -40,17 +40,13 @@ WiFiManager::~WiFiManager() {
 }
 
 void WiFiManager::connectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) {
-        isConnecting = false;
-        connectionStatusDisplayed = false;
-        return;
-    }
-
+    // 强制设置连接中状态（用于所有WiFi连接场景：首次连接、断线重连、MQTT失败触发重连）
     isConnecting = true;
+    connectStartTime = millis();
 
+    // 显示连接提示（如果是第一次显示）
     if (!connectionStatusDisplayed) {
         Serial.println("正在连接WiFi...");
-        displayManager.setTextColor(displayManager.whiteColor);
         displayManager.setTextSize(1);
         displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor);
         connectionStatusDisplayed = true;
@@ -63,7 +59,6 @@ void WiFiManager::connectWiFi() {
     if (ssid.length() > 0) {
         Serial.printf("尝试连接保存的WiFi: %s\n", ssid.c_str());
         WiFi.begin(ssid.c_str(), password.c_str());
-        connectStartTime = millis();
     } else {
         Serial.println("未找到保存的WiFi信息，进入配网模式");
         isConnecting = false;
@@ -71,6 +66,26 @@ void WiFiManager::connectWiFi() {
         startConfigMode();
         return;
     }
+}
+
+void WiFiManager::reconnectWiFi() {
+    Serial.println("WiFi断开连接，正在尝试重新连接...");
+
+    // 断开现有连接
+    WiFi.disconnect();
+
+    // 等待WiFi完全断开（最多等待2秒）
+    int waitCount = 0;
+    while (WiFi.status() == WL_CONNECTED && waitCount < 40) {
+        delay(50);
+        waitCount++;
+    }
+
+    // 重置连接状态标志
+    connectionStatusDisplayed = false;
+
+    // 开始重新连接
+    connectWiFi();
 }
 
 void WiFiManager::init() {
@@ -110,23 +125,27 @@ void WiFiManager::loop() {
         return;
     }
 
-    // 检查 WiFi 连接状态，如果断开则尝试重连
+    // ========== WiFi连接管理 ==========
+    // wifiInitialized: WiFi模块是否已初始化（调用过connectWiFi至少一次）
+    // isConnecting: WiFi是否正在连接中（用于超时检测和阻止MQTT连接）
+    // 只有WiFi已初始化且当前未在连接、且连接断开时，才尝试重连
     if (wifiInitialized && WiFi.status() != WL_CONNECTED && !isConnecting) {
         unsigned long now = millis();
         if (now - lastWiFiConnectAttempt >= wifiReconnectInterval) {
             lastWiFiConnectAttempt = now;
-            Serial.println("WiFi断开连接，正在尝试重新连接...");
-            connectWiFi();
+            reconnectWiFi();
         }
     }
 
-    // 检查首次连接是否超时
+    // 检查连接是否成功或超时
     if (isConnecting) {
         if (WiFi.status() == WL_CONNECTED) {
             Serial.printf("\nWiFi连接成功! IP: %s\n", WiFi.localIP().toString().c_str());
+            displayManager.setTextSize(1);
             displayManager.displayText("WiFi连接成功", false, displayManager.whiteColor);
             isConnecting = false;
             connectionStatusDisplayed = false;
+            mqttFailCount = 0;  // WiFi连接成功，重置MQTT失败计数
         } else if (millis() - connectStartTime >= connectTimeout) {
             Serial.println("\nWiFi连接超时，进入配网模式");
             isConnecting = false;
@@ -135,7 +154,8 @@ void WiFiManager::loop() {
         }
     }
 
-    // 检查 MQTT 连接（需要在 WiFi 连接成功后且不在重连过程中）
+    // ========== MQTT连接管理 ==========
+    // 只有WiFi已连接且不在连接过程中（isConnecting=false）时才处理MQTT
     if (WiFi.status() == WL_CONNECTED && !isConnecting) {
         if (!mqttClient->connected()) {
             unsigned long now = millis();
@@ -164,18 +184,11 @@ void WiFiManager::loop() {
                     mqttFailCount++;
                     Serial.printf("MQTT连接失败，状态: %d\n", state);
 
-                    // 如果失败3次，强制触发WiFi重连（可能是DNS或网络问题）
+                    // 如果失败5次，强制触发WiFi重连（可能是DNS或网络问题）
                     if (mqttFailCount >= maxMqttFailCount) {
                         Serial.printf("MQTT连续失败 %d 次，触发WiFi重连\n", maxMqttFailCount);
                         mqttFailCount = 0;
-
-                        // 断开WiFi连接，触发重连
-                        WiFi.disconnect();
-                        delay(500);
-                        isConnecting = true;
-                        connectionStatusDisplayed = false;
-                        connectStartTime = millis();
-                        connectWiFi();
+                        reconnectWiFi();
                     }
                 }
             }

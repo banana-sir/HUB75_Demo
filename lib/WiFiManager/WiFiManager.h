@@ -34,8 +34,8 @@ private:
     const unsigned long wifiReconnectInterval = 2000;  // WiFi重连间隔（毫秒）
 
     // WiFi状态标志
-    bool wifiInitialized;                     // WiFi模块是否已完成初始化
-    bool isConnecting;                       // 当前是否正在连接WiFi（用于超时检测）
+    bool wifiInitialized;                     // WiFi模块是否已初始化（调用过connectWiFi至少一次）
+    bool isConnecting;                       // WiFi是否正在连接中（用于超时检测和阻止MQTT连接）
     bool connectionStatusDisplayed;           // 连接状态信息是否已显示到LED屏幕（避免重复显示）
 
     // 配网模式
@@ -60,6 +60,7 @@ private:
     void parseAndDisplayText(const char* payload);    // 解析MQTT文本消息并显示到LED屏幕
     void parseAndDisplayImage(byte* payload, unsigned int length);  // 解析MQTT图片消息并显示到LED屏幕
     void connectWiFi();                          // 连接WiFi（使用已保存的配置）
+    void reconnectWiFi();                        // 重新连接WiFi（先断开再连接）
     void startConfigMode();                      // 启动AP配网模式
     void handleRoot();                           // 处理根路径请求（返回配网页面）
     void handleScan();                           // 处理WiFi扫描请求

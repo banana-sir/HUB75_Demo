@@ -8,7 +8,7 @@ DisplayManager::DisplayManager() :
     dma_display(nullptr),
     scrollLines(nullptr),
     textSize(1),
-    maxLines(1),
+    maxLines(PANEL_RES_Y / 16),
     blackColor(0), whiteColor(0), redColor(0), greenColor(0), blueColor(0), yellowColor(0), pinkColor(0)
 {
 }
@@ -81,9 +81,10 @@ void DisplayManager::loop() {
             // 检查该行是否到达更新时间
             if (now > scrollLines[i].lastUpdateTime) {
                 int yPosition = scrollLines[i].yPosition;
+                int lineHeight = scrollLines[i].textSize * 16;
 
-                // 清除当前行区域
-                dma_display->fillRect(0, yPosition, PANEL_RES_X, textSize * 16, blackColor);
+                // 清除当前行区域（使用该行的字体大小）
+                dma_display->fillRect(0, yPosition, PANEL_RES_X, lineHeight, blackColor);
 
                 // 更新文本位置
                 scrollLines[i].xPosition += scrollLines[i].scrollXMove;
@@ -91,6 +92,9 @@ void DisplayManager::loop() {
                 // 检查文本是否完全移出屏幕，根据滚动方向重置位置
                 int16_t xOne, yOne;
                 uint16_t textWidth, textHeight;
+
+                // 设置正确的字体大小来计算文本宽度
+                dma_display->setTextSize(scrollLines[i].textSize);
                 dma_display->getTextBounds(scrollLines[i].content, scrollLines[i].xPosition, yPosition,
                                           &xOne, &yOne, &textWidth, &textHeight);
 
@@ -109,7 +113,10 @@ void DisplayManager::loop() {
                 // 设置该行的颜色并绘制滚动文本
                 dma_display->setTextColor(scrollLines[i].color);
                 dma_display->setCursor(scrollLines[i].xPosition, yPosition);
-                dma_display->printlnUTF8(scrollLines[i].content);
+                dma_display->printUTF8(scrollLines[i].content);
+
+                // 恢复全局字体大小
+                dma_display->setTextSize(textSize);
 
                 // 设置下一次该行的更新时间
                 scrollLines[i].lastUpdateTime = now + scrollLines[i].scrollTimeDelay;
@@ -289,23 +296,11 @@ void DisplayManager::clearLine(uint16_t line) {
 }
 
 void DisplayManager::setTextSize(int size) {
+    // 只设置字体大小，不重新分配滚动行数组
+    // 不同字体大小的滚动文本可以同时存在
     if (dma_display == nullptr) return;
     textSize = size;
     dma_display->setTextSize(textSize);
-
-    // 计算最大行数（字体高度是16 * textSize）
-    int newMaxLines = PANEL_RES_Y / (textSize * 16);
-    if (newMaxLines < 1) newMaxLines = 1;
-
-    // 如果行数变化，需要重新分配滚动行数组
-    if (newMaxLines != maxLines) {
-        freeAllScrollLines();
-        if (scrollLines != nullptr) {
-            delete[] scrollLines;
-        }
-        maxLines = newMaxLines;
-        scrollLines = new ScrollLine[maxLines];
-    }
 }
 
 void DisplayManager::setTextColor(uint16_t color) {
@@ -327,8 +322,22 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
 
     // 静态文本：根据 autoWrap 决定是否启用自动换行（并在需要时清屏/清行）
     if (!isScroll) {
+        // 检查是否有滚动文本
+        bool hasScrolling = false;
+        for (int i = 0; i < maxLines; i++) {
+            if (scrollLines[i].isActive && scrollLines[i].isScrolling) {
+                hasScrolling = true;
+                break;
+            }
+        }
+
+        // 如果有滚动文本，强制 autoWrap 为 false
+        if (hasScrolling) {
+            autoWrap = false;
+        }
+
         if (line <= 0) {
-            // 全屏显示
+            // line <= 0（包括-1）时：全屏显示并清屏
             freeAllScrollLines();
             clearAll();
             dma_display->setTextColor((color != 0) ? color : whiteColor);
@@ -337,17 +346,38 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
             dma_display->printlnUTF8(textContent);
             return;
         } else {
-            // 指定行显示：根据 autoWrap 决定清除区域
+            // line > 0（包括1）时：指定行显示，不清屏，只清除指定行区域
             int yPosition = (line - 1) * textSize * 16;
+            int startY = yPosition;
+            int endY;
 
             if (autoWrap) {
                 // 自动换行时，计算文本需要占用的行数并清除相应区域
                 int textLines = calculateTextLines(textContent, line);
                 int height = textLines * textSize * 16;
                 dma_display->fillRect(0, yPosition, PANEL_RES_X, height, blackColor);
+                endY = yPosition + height;
             } else {
                 // 不自动换行时，只清除当前行
                 clearLine(line);
+                endY = yPosition + textSize * 16;
+            }
+
+            // 清除被静态文本区域覆盖的滚动文本
+            for (int i = 0; i < maxLines; i++) {
+                if (scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
+                    int scrollY = scrollLines[i].yPosition;
+                    int scrollHeight = scrollLines[i].textSize * 16;
+
+                    // 检查静态文本区域是否与滚动文本区域重叠
+                    if (!(endY <= scrollY || startY >= scrollY + scrollHeight)) {
+                        // 有重叠，清除该滚动文本
+                        free(scrollLines[i].content);
+                        scrollLines[i].content = nullptr;
+                        scrollLines[i].isActive = false;
+                        scrollLines[i].isScrolling = false;
+                    }
+                }
             }
 
             dma_display->setTextColor((color != 0) ? color : whiteColor);
@@ -358,10 +388,8 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
         }
     }
 
-    // 滚动文本：在指定行显示，使用指定的速度、颜色和方向
+    // 滚动文本：在指定行显示
     if (line < 1 || line > maxLines) line = 1;
-
-    //delay(30);
     int index = line - 1;
 
     // 清除该行旧的滚动内容
@@ -370,9 +398,30 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
         scrollLines[index].content = nullptr;
     }
 
+    // 计算Y坐标：固定为 (line-1) * 16，确保不同字体大小的文本可以共存
+    // 例如：line=1在y=0，line=2在y=16，line=3在y=32，line=4在y=48
+    int yPosition = (line - 1) * 16;
+    int lineHeight = textSize * 16;
+
     // 清除指定行区域
-    int yPosition = (line - 1) * textSize * 16;
-    dma_display->fillRect(0, yPosition, PANEL_RES_X, textSize * 16, blackColor);
+    dma_display->fillRect(0, yPosition, PANEL_RES_X, lineHeight, blackColor);
+
+    // 清除被新滚动文本区域覆盖的其他滚动文本
+    for (int i = 0; i < maxLines; i++) {
+        if (i != index && scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
+            int scrollY = scrollLines[i].yPosition;
+            int scrollHeight = scrollLines[i].textSize * 16;
+
+            // 检查新滚动文本区域是否与其他滚动文本区域重叠
+            if (!(yPosition + lineHeight <= scrollY || yPosition >= scrollY + scrollHeight)) {
+                // 有重叠，清除该滚动文本
+                free(scrollLines[i].content);
+                scrollLines[i].content = nullptr;
+                scrollLines[i].isActive = false;
+                scrollLines[i].isScrolling = false;
+            }
+        }
+    }
 
     dma_display->setTextWrap(false);
     int len = strlen(textContent) + 1;
@@ -393,6 +442,9 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
     scrollLines[index].scrollXMove = xMove;
     scrollLines[index].scrollTimeDelay = timeDelay;
 
+    // 设置该行的字体大小（使用当前的全局textSize）
+    scrollLines[index].textSize = textSize;
+
     // 根据滚动方向设置初始位置
     if (direction == SCROLL_LEFT) {
         scrollLines[index].xPosition = PANEL_RES_X;
@@ -400,7 +452,9 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
         // 向右滚动：计算文本宽度，从左侧开始
         int16_t xOne, yOne;
         uint16_t textWidth, textHeight;
+        dma_display->setTextSize(textSize);  // 设置正确的字体大小来计算文本宽度
         dma_display->getTextBounds(textContent, 0, yPosition, &xOne, &yOne, &textWidth, &textHeight);
+        dma_display->setTextSize(textSize);  // 恢复全局字体大小
         scrollLines[index].xPosition = -textWidth;
     }
 
