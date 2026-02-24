@@ -47,6 +47,7 @@ void WiFiManager::connectWiFi() {
     // 显示连接提示（如果是第一次显示）
     if (!connectionStatusDisplayed) {
         Serial.println("正在连接WiFi...");
+        displayManager.clearAll();
         displayManager.setTextSize(1);
         displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor);
         connectionStatusDisplayed = true;
@@ -228,7 +229,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         }
 
         // 解析 JSON
-        StaticJsonDocument<64> doc;
+        StaticJsonDocument<256> doc;
         DeserializationError error = deserializeJson(doc, msg.c_str());
 
         if (error) {
@@ -247,7 +248,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         }
 
         // 解析 JSON
-        StaticJsonDocument<64> doc;
+        StaticJsonDocument<256> doc;
         DeserializationError error = deserializeJson(doc, msg.c_str());
 
         if (error) {
@@ -322,7 +323,7 @@ void WiFiManager::parseAndDisplayText(const char* payload) {
     }
 
     // 解析 JSON
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<512> doc;
     DeserializationError error = deserializeJson(doc, payload);
 
     if (error) {

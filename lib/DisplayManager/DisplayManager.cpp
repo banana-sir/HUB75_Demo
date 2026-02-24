@@ -72,14 +72,15 @@ void DisplayManager::loop() {
     // 如果没有滚动行，直接返回
     if (!hasScrollingLines) return;
 
-    // 刷新DMA缓冲区
-    dma_display->flipDMABuffer();
+    // 标记是否有任何行被更新
+    bool hasUpdated = false;
 
     // 更新所有激活的滚动行，每行独立更新
     for (int i = 0; i < maxLines; i++) {
         if (scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
             // 检查该行是否到达更新时间
             if (now > scrollLines[i].lastUpdateTime) {
+                hasUpdated = true;
                 int yPosition = scrollLines[i].yPosition;
                 int lineHeight = scrollLines[i].textSize * 16;
 
@@ -122,6 +123,11 @@ void DisplayManager::loop() {
                 scrollLines[i].lastUpdateTime = now + scrollLines[i].scrollTimeDelay;
             }
         }
+    }
+
+    // 只有在有内容更新时才刷新DMA缓冲区，避免不必要的闪烁
+    if (hasUpdated) {
+        dma_display->flipDMABuffer();
     }
 }
 
@@ -290,9 +296,9 @@ int DisplayManager::calculateTextLines(const char *textContent, int startLine) {
 }
 
 void DisplayManager::clearLine(uint16_t line) {
-    // 清除指定行（line从1开始）
+    // 清除指定行（line从1开始），使用固定16像素行高与滚动文本保持一致
     if (dma_display == nullptr) return;
-    dma_display->fillRect(0, (line-1) * textSize * 16, PANEL_RES_X, textSize * 16, blackColor);
+    dma_display->fillRect(0, (line-1) * 16, PANEL_RES_X, 16, blackColor);
 }
 
 void DisplayManager::setTextSize(int size) {
@@ -347,7 +353,8 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
             return;
         } else {
             // line > 0（包括1）时：指定行显示，不清屏，只清除指定行区域
-            int yPosition = (line - 1) * textSize * 16;
+            // 静态文本使用固定16像素行高，与滚动文本保持一致的行数选择
+            int yPosition = (line - 1) * 16;
             int startY = yPosition;
             int endY;
 
@@ -507,8 +514,8 @@ void DisplayManager::displayImage(const char *base64Data, int length) {
         int x = i % PANEL_RES_X;
         int y = i / PANEL_RES_X;
 
-        // 直接使用rgb565数据（大端序）
-        uint16_t color = ((uint16_t)decodedData[i * 2] << 8) | decodedData[i * 2 + 1];
+        // 解析rgb565数据（小端序：低位字节在前）
+        uint16_t color = decodedData[i * 2] | ((uint16_t)decodedData[i * 2 + 1] << 8);
 
         dma_display->drawPixel(x, y, color);
 
