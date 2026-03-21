@@ -6,7 +6,6 @@
 #include "../../include/config.h"
 
 
-
 class DisplayManager {
 public:
     // 滚动方向枚举
@@ -81,13 +80,15 @@ public:
     //
     // 使用说明：
     // - 每个滚动行记录自己的字体大小，不同字体大小的文本可以同时滚动
-    // - 滚动文本的Y坐标固定：line=1在y=0，line=2在y=16，line=3在y=32，line=4在y=48
+    // - 静态文本和滚动文本使用相同的行坐标系：每行固定16像素高
+    // - line=1在y=0，line=2在y=16，line=3在y=32，line=4在y=48
     // - 最大行数由PANEL_RES_Y/16决定，例如：64x64屏幕支持4行，64x32屏幕支持2行
+    // - 静态文本和滚动文本可以选择相同的行号进行显示
     // - 先 setTextSize(size)，再 displayText(text, true, color, line, false, speed, dir)
     // - 例如：
     //   - setTextSize(1); displayText("Hello", true, 0xFFFF, 1); // 第1行，y=0，字体1，高度16
     //   - setTextSize(2); displayText("World", true, 0xFFFF, 2); // 第2行，y=16，字体2，高度32
-    //   - 注意：字体2的文本会从y=16延伸到y=48，会覆盖line=3和line=4的区域
+    //   - 注意：大字号的文本（如textSize=2）会延伸到后续行区域，可能覆盖其他行的内容
     void displayText(const char *textContent, bool isScroll, uint16_t color = 0,  int line = -1, bool autoWrap = true,int scrollSpeed = 1, ScrollDirection direction = SCROLL_LEFT);
     void clearScrollLine(int line);  // 清除指定行的滚动状态
     void setLineScrollSpeed(int line, int speed);  // 设置指定行的滚动速度
