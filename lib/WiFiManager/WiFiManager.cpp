@@ -47,7 +47,7 @@ void WiFiManager::connectWiFi() {
     // 显示连接提示（如果是第一次显示）
     if (!connectionStatusDisplayed) {
         Serial.println("正在连接WiFi...");
-        displayManager.clearAll();
+        //displayManager.clearAll();
         displayManager.setTextSize(1);
         displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor);
         connectionStatusDisplayed = true;
@@ -95,9 +95,25 @@ void WiFiManager::init() {
     // 初始化 Preferences (用于保存WiFi配置)
     preferences.begin("wifi_config", false);
 
+    String mac = String(ESP.getEfuseMac(), HEX);
+    Serial.printf("MAC: %s\n", mac.c_str());
+
     // 生成并保存 MQTT ClientId
-    clientId = "ESP32/" + String(PANEL_RES_X) + 'x' + String(PANEL_RES_Y) + '/' + String(ESP.getEfuseMac(), HEX);
+    clientId = "ESP32/" + String(PANEL_RES_X) + 'x' + String(PANEL_RES_Y) + '/' + mac;
     Serial.printf("MQTT ClientId: %s\n", clientId.c_str());
+
+    // 生成设备特定的MQTT主题
+    String baseTopic = "LED/" + mac + "/";
+    topicText = baseTopic + "Text";
+    topicClear = baseTopic + "Clear";
+    topicBrightness = baseTopic + "Brightness";
+    topicImage = baseTopic + "Image";
+
+    Serial.printf("MQTT Topics:\n");
+    Serial.printf("  Text: %s\n", topicText.c_str());
+    Serial.printf("  Clear: %s\n", topicClear.c_str());
+    Serial.printf("  Brightness: %s\n", topicBrightness.c_str());
+    Serial.printf("  Image: %s\n", topicImage.c_str());
 
     // 初始化 MQTT 客户端
     if (!mqttClient) {
@@ -167,14 +183,14 @@ void WiFiManager::loop() {
 
                 if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
                     Serial.println("MQTT服务器已连接");
-                    mqttClient->subscribe(MQTT_TOPIC_TEXT);
-                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_TEXT);
-                    mqttClient->subscribe(MQTT_TOPIC_CLEAR);
-                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_CLEAR);
-                    mqttClient->subscribe(MQTT_TOPIC_BRIGHTNESS);
-                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_BRIGHTNESS);
-                    mqttClient->subscribe(MQTT_TOPIC_IMAGE);
-                    Serial.printf("已订阅主题: %s\n", MQTT_TOPIC_IMAGE);
+                    mqttClient->subscribe(topicText.c_str());
+                    Serial.printf("已订阅主题: %s\n", topicText.c_str());
+                    mqttClient->subscribe(topicClear.c_str());
+                    Serial.printf("已订阅主题: %s\n", topicClear.c_str());
+                    mqttClient->subscribe(topicBrightness.c_str());
+                    Serial.printf("已订阅主题: %s\n", topicBrightness.c_str());
+                    mqttClient->subscribe(topicImage.c_str());
+                    Serial.printf("已订阅主题: %s\n", topicImage.c_str());
                     displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor);
 
                     // 连接成功，重置失败计数
@@ -220,14 +236,9 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
     }
     msg.trim();
 
-    if (topicStr.equals(MQTT_TOPIC_TEXT)) {
+    if (topicStr.equals(topicText)) {
         this->parseAndDisplayText(msg.c_str());
-    } else if (topicStr.equals(MQTT_TOPIC_CLEAR)) {
-        // 先检查target字段
-        if (!checkTarget(msg.c_str())) {
-            return;
-        }
-
+    } else if (topicStr.equals(topicClear)) {
         // 解析 JSON
         StaticJsonDocument<256> doc;
         DeserializationError error = deserializeJson(doc, msg.c_str());
@@ -241,12 +252,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         if (clear) {
             displayManager.clearAll();
         }
-    } else if (topicStr.equals(MQTT_TOPIC_BRIGHTNESS)) {
-        // 先检查target字段
-        if (!checkTarget(msg.c_str())) {
-            return;
-        }
-
+    } else if (topicStr.equals(topicBrightness)) {
         // 解析 JSON
         StaticJsonDocument<256> doc;
         DeserializationError error = deserializeJson(doc, msg.c_str());
@@ -260,7 +266,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         if (b < 0) b = 0;
         if (b > 255) b = 255;
         displayManager.setBrightness((uint8_t)b);
-    } else if (topicStr.equals(MQTT_TOPIC_IMAGE)) {
+    } else if (topicStr.equals(topicImage)) {
         // 图片消息直接传递原始 payload，避免大 JSON 文档在栈上分配
         this->parseAndDisplayImage(payload, length);
     } else {
@@ -268,59 +274,8 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
     }
 }
 
-bool WiFiManager::checkTarget(const char* payload) {
-    // 使用字符串查找来快速提取target字段，避免完整JSON解析
-    const char* targetStart = strstr(payload, "\"target\":");
-    if (targetStart == nullptr) {
-        Serial.println("消息缺少 target 字段");
-        return false;
-    }
-
-    // 跳过 "target":
-    targetStart += 9;
-
-    // 跳过冒号后的空格（如果有）
-    while (*targetStart == ' ') {
-        targetStart++;
-    }
-
-    // 查找引号开始
-    if (*targetStart != '"') {
-        Serial.println("target 字段格式错误");
-        return false;
-    }
-    const char* targetValueStart = targetStart + 1;
-
-    // 查找引号结束
-    const char* targetValueEnd = strchr(targetValueStart, '"');
-    if (targetValueEnd == nullptr) {
-        Serial.println("target 字段格式错误");
-        return false;
-    }
-
-    // 提取 target 值
-    size_t targetLength = targetValueEnd - targetValueStart;
-    String targetStr = String(targetValueStart, targetLength);
-
-    // 检查目标是否匹配当前设备或通配符（根据分辨率动态生成）
-    String allDevicesTarget = "All_" + String(PANEL_RES_X) + "x" + String(PANEL_RES_Y);
-
-    if (!targetStr.equals(clientId) && !targetStr.equals(allDevicesTarget)) {
-        Serial.printf("目标不匹配: 收到=%s, 当前ClientId=%s, 通配符=%s\n", targetStr.c_str(), clientId.c_str(), allDevicesTarget.c_str());
-        return false;
-    }
-
-    Serial.printf("目标匹配: %s\n", targetStr.c_str());
-    return true;
-}
-
 void WiFiManager::parseAndDisplayText(const char* payload) {
     Serial.printf("收到文本MQTT消息\n");
-
-    // 先检查target字段，提高效率
-    if (!checkTarget(payload)) {
-        return;
-    }
 
     // 解析 JSON
     StaticJsonDocument<512> doc;
@@ -373,13 +328,8 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
         return;
     }
 
-    // 先检查target字段，提高效率
-    const char* payloadStr = (const char*)payload;
-    if (!checkTarget(payloadStr)) {
-        return;
-    }
-
     // 在原始 payload 中查找 image_base64 字段的起始位置
+    const char* payloadStr = (const char*)payload;
     const char* imageBase64Start = strstr(payloadStr, "\"image_base64\":\"");
 
     if (imageBase64Start == nullptr) {

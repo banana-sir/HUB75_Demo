@@ -296,9 +296,9 @@ int DisplayManager::calculateTextLines(const char *textContent, int startLine) {
 }
 
 void DisplayManager::clearLine(uint16_t line) {
-    // 清除指定行（line从1开始），使用固定16像素行高与滚动文本保持一致
+    // 清除指定行（line从1开始）
     if (dma_display == nullptr) return;
-    dma_display->fillRect(0, (line-1) * 16, PANEL_RES_X, 16, blackColor);
+    dma_display->fillRect(0, (line-1) * textSize * 16, PANEL_RES_X, textSize * 16, blackColor);
 }
 
 void DisplayManager::setTextSize(int size) {
@@ -328,24 +328,10 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
 
     // 静态文本：根据 autoWrap 决定是否启用自动换行（并在需要时清屏/清行）
     if (!isScroll) {
-        // 检查是否有滚动文本
-        bool hasScrolling = false;
-        for (int i = 0; i < maxLines; i++) {
-            if (scrollLines[i].isActive && scrollLines[i].isScrolling) {
-                hasScrolling = true;
-                break;
-            }
-        }
-
-        // 如果有滚动文本，强制 autoWrap 为 false
-        if (hasScrolling) {
-            autoWrap = false;
-        }
-
         if (line <= 0) {
             // line <= 0（包括-1）时：全屏显示并清屏
-            freeAllScrollLines();
             clearAll();
+            // clearAll()已经清除了所有滚动文本，autoWrap保持原值
             dma_display->setTextColor((color != 0) ? color : whiteColor);
             dma_display->setCursor(0, 0);
             dma_display->setTextWrap(autoWrap);
@@ -353,7 +339,21 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
             return;
         } else {
             // line > 0（包括1）时：指定行显示，不清屏，只清除指定行区域
-            // 静态文本使用固定16像素行高，与滚动文本保持一致的行数选择
+            // 如果有滚动文本，强制 autoWrap 为 false
+            bool hasScrolling = false;
+            for (int i = 0; i < maxLines; i++) {
+                if (scrollLines[i].isActive && scrollLines[i].isScrolling) {
+                    hasScrolling = true;
+                    break;
+                }
+            }
+
+            // 如果有滚动文本，强制 autoWrap 为 false
+            if (hasScrolling) {
+                autoWrap = false;
+            }
+
+            // 静态文本与滚动文本使用相同的行坐标系：每行固定16像素高
             int yPosition = (line - 1) * 16;
             int startY = yPosition;
             int endY;
@@ -365,8 +365,8 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
                 dma_display->fillRect(0, yPosition, PANEL_RES_X, height, blackColor);
                 endY = yPosition + height;
             } else {
-                // 不自动换行时，只清除当前行
-                clearLine(line);
+                // 不自动换行时，只清除当前行区域（使用当前字体大小）
+                dma_display->fillRect(0, yPosition, PANEL_RES_X, textSize * 16, blackColor);
                 endY = yPosition + textSize * 16;
             }
 

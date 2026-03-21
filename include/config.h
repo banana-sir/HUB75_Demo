@@ -44,15 +44,13 @@
 // ============================================================================
 #define AP_SSID "ESP32-LED-Matrix"
 
-#define MQTT_SERVER "zheng241.xyz"
+#define MQTT_SERVER "zheng221.xyz"
 #define MQTT_PORT 1883
 #define MQTT_USERNAME "64x64esp32"
 #define MQTT_PASSWORD "123456"
 
-#define MQTT_TOPIC_TEXT "LED/Text"
-#define MQTT_TOPIC_CLEAR "LED/Clear"
-#define MQTT_TOPIC_BRIGHTNESS "LED/Brightness"
-#define MQTT_TOPIC_IMAGE "LED/Image"
+// MQTT主题由设备MAC地址动态生成，格式为：LED/{mac}/...
+// 例如：LED/246f28a58ec4/Text, LED/246f28a58ec4/Clear 等
 
 #define MAX_MQTT_PAYLOAD_SIZE 12800  // MQTT消息最大载荷大小（字节）
 
