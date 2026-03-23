@@ -5,6 +5,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include "esp_task_wdt.h"
+#include "config.h"
 
 WiFiManager::WiFiManager() :
     mqttClient(nullptr),
@@ -43,7 +44,7 @@ void WiFiManager::connectWiFi() {
 
     // 显示连接提示（如果是第一次显示）
     if (!connectionStatusDisplayed) {
-        Serial.println("正在连接WiFi...");
+        DEBUG_LOG("正在连接WiFi...\n");
         //displayManager.clearAll();
         displayManager.setTextSize(1);
         displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor);
@@ -55,10 +56,10 @@ void WiFiManager::connectWiFi() {
     String password = preferences.getString("wifi_password", "");
 
     if (ssid.length() > 0) {
-        Serial.printf("尝试连接保存的WiFi: %s\n", ssid.c_str());
+        DEBUG_LOG("尝试连接保存的WiFi: %s\n", ssid.c_str());
         WiFi.begin(ssid.c_str(), password.c_str());
     } else {
-        Serial.println("未找到保存的WiFi信息，进入配网模式");
+        DEBUG_LOG("未找到保存的WiFi信息，进入配网模式\n");
         isConnecting = false;
         connectionStatusDisplayed = false;
         startConfigMode();
@@ -67,7 +68,7 @@ void WiFiManager::connectWiFi() {
 }
 
 void WiFiManager::reconnectWiFi() {
-    Serial.println("WiFi断开连接，正在尝试重新连接...");
+    DEBUG_LOG("WiFi断开连接，正在尝试重新连接...\n");
 
     // 断开现有连接
     WiFi.disconnect();
@@ -87,17 +88,17 @@ void WiFiManager::reconnectWiFi() {
 }
 
 void WiFiManager::init() {
-    Serial.println("WiFi正在初始化...");
+    DEBUG_LOG("WiFi正在初始化...\n");
 
     // 初始化 Preferences (用于保存WiFi配置)
     preferences.begin("wifi_config", false);
 
     String mac = String(ESP.getEfuseMac(), HEX);
-    Serial.printf("MAC: %s\n", mac.c_str());
+    DEBUG_LOG("MAC: %s\n", mac.c_str());
 
     // 生成并保存 MQTT ClientId
     clientId = "ESP32/" + String(PANEL_RES_X) + 'x' + String(PANEL_RES_Y) + '/' + mac;
-    Serial.printf("MQTT ClientId: %s\n", clientId.c_str());
+    DEBUG_LOG("MQTT ClientId: %s\n", clientId.c_str());
 
     // 生成设备特定的MQTT主题
     String baseTopic = "LED/" + mac + "/";
@@ -106,11 +107,11 @@ void WiFiManager::init() {
     topicBrightness = baseTopic + "Brightness";
     topicImage = baseTopic + "Image";
 
-    Serial.printf("MQTT Topics:\n");
-    Serial.printf("  Text: %s\n", topicText.c_str());
-    Serial.printf("  Clear: %s\n", topicClear.c_str());
-    Serial.printf("  Brightness: %s\n", topicBrightness.c_str());
-    Serial.printf("  Image: %s\n", topicImage.c_str());
+    DEBUG_LOG("MQTT Topics:\n");
+    DEBUG_LOG("  Text: %s\n", topicText.c_str());
+    DEBUG_LOG("  Clear: %s\n", topicClear.c_str());
+    DEBUG_LOG("  Brightness: %s\n", topicBrightness.c_str());
+    DEBUG_LOG("  Image: %s\n", topicImage.c_str());
 
     // 初始化 MQTT 客户端
     if (!mqttClient) {
@@ -154,14 +155,14 @@ void WiFiManager::loop() {
     // 检查连接是否成功或超时
     if (isConnecting) {
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("\nWiFi连接成功! IP: %s\n", WiFi.localIP().toString().c_str());
+            DEBUG_LOG("\nWiFi连接成功! IP: %s\n", WiFi.localIP().toString().c_str());
             displayManager.setTextSize(1);
             displayManager.displayText("WiFi连接成功", false, displayManager.whiteColor);
             isConnecting = false;
             connectionStatusDisplayed = false;
             mqttFailCount = 0;  // WiFi连接成功，重置MQTT失败计数
         } else if (millis() - connectStartTime >= connectTimeout) {
-            Serial.println("\nWiFi连接超时，进入配网模式");
+            DEBUG_LOG("\nWiFi连接超时，进入配网模式\n");
             isConnecting = false;
             connectionStatusDisplayed = false;
             startConfigMode();
@@ -175,19 +176,19 @@ void WiFiManager::loop() {
             unsigned long now = millis();
             if (now - lastMqttConnectAttempt >= mqttReconnectInterval) {
                 lastMqttConnectAttempt = now;
-                Serial.printf("Attempting MQTT connection to %s:%d... (失败次数: %d/%d)\n",
+                DEBUG_LOG("Attempting MQTT connection to %s:%d... (失败次数: %d/%d)\n",
                              MQTT_SERVER, MQTT_PORT, mqttFailCount, maxMqttFailCount);
 
                 if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
-                    Serial.println("MQTT服务器已连接");
+                    DEBUG_LOG("MQTT服务器已连接\n");
                     mqttClient->subscribe(topicText.c_str());
-                    Serial.printf("已订阅主题: %s\n", topicText.c_str());
+                    DEBUG_LOG("已订阅主题: %s\n", topicText.c_str());
                     mqttClient->subscribe(topicClear.c_str());
-                    Serial.printf("已订阅主题: %s\n", topicClear.c_str());
+                    DEBUG_LOG("已订阅主题: %s\n", topicClear.c_str());
                     mqttClient->subscribe(topicBrightness.c_str());
-                    Serial.printf("已订阅主题: %s\n", topicBrightness.c_str());
+                    DEBUG_LOG("已订阅主题: %s\n", topicBrightness.c_str());
                     mqttClient->subscribe(topicImage.c_str());
-                    Serial.printf("已订阅主题: %s\n", topicImage.c_str());
+                    DEBUG_LOG("已订阅主题: %s\n", topicImage.c_str());
                     displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor);
 
                     // 连接成功，重置失败计数
@@ -196,11 +197,11 @@ void WiFiManager::loop() {
                 } else {
                     int state = mqttClient->state();
                     mqttFailCount++;
-                    Serial.printf("MQTT连接失败，状态: %d\n", state);
+                    DEBUG_LOG("MQTT连接失败，状态: %d\n", state);
 
                     // 如果失败5次，强制触发WiFi重连（可能是DNS或网络问题）
                     if (mqttFailCount >= maxMqttFailCount) {
-                        Serial.printf("MQTT连续失败 %d 次，触发WiFi重连\n", maxMqttFailCount);
+                        DEBUG_LOG("MQTT连续失败 %d 次，触发WiFi重连\n", maxMqttFailCount);
                         mqttFailCount = 0;
                         reconnectWiFi();
                     }
@@ -212,7 +213,7 @@ void WiFiManager::loop() {
     } else {
         // WiFi断开时，重置MQTT状态
         if (mqttWasConnected) {
-            Serial.println("WiFi断开，MQTT连接已断开");
+            DEBUG_LOG("WiFi断开，MQTT连接已断开\n");
             mqttWasConnected = false;
             mqttFailCount = 0;
         }
@@ -241,7 +242,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         DeserializationError error = deserializeJson(doc, msg.c_str());
 
         if (error) {
-            Serial.printf("Clear消息JSON解析失败: %s\n", error.c_str());
+            DEBUG_LOG("Clear消息JSON解析失败: %s\n", error.c_str());
             return;
         }
 
@@ -255,7 +256,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         DeserializationError error = deserializeJson(doc, msg.c_str());
 
         if (error) {
-            Serial.printf("Brightness消息JSON解析失败: %s\n", error.c_str());
+            DEBUG_LOG("Brightness消息JSON解析失败: %s\n", error.c_str());
             return;
         }
 
@@ -267,19 +268,19 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         // 图片消息直接传递原始 payload，避免大 JSON 文档在栈上分配
         this->parseAndDisplayImage(payload, length);
     } else {
-        Serial.printf("未知主题: %s\n", topic);
+        DEBUG_LOG("未知主题: %s\n", topic);
     }
 }
 
 void WiFiManager::parseAndDisplayText(const char* payload) {
-    Serial.printf("收到文本MQTT消息\n");
+    DEBUG_LOG("收到文本MQTT消息\n");
 
     // 解析 JSON
     StaticJsonDocument<512> doc;
     DeserializationError error = deserializeJson(doc, payload);
 
     if (error) {
-        Serial.printf("JSON解析失败: %s\n", error.c_str());
+        DEBUG_LOG("JSON解析失败: %s\n", error.c_str());
         return;
     }
 
@@ -303,7 +304,7 @@ void WiFiManager::parseAndDisplayText(const char* payload) {
         color = (r & 0xF8) << 8 | (g & 0xFC) << 3 | (b >> 3);
     }
 
-    Serial.printf("Text: %s, Scroll: %d, Color: %d, Size: %d, Line: %d, Wrap: %d, Speed: %d, Direction: %d\n", text, scrollMode, color, fontSize, line, wrap, scrollSpeed, scrollDirection);
+    DEBUG_LOG("Text: %s, Scroll: %d, Color: %d, Size: %d, Line: %d, Wrap: %d, Speed: %d, Direction: %d\n", text, scrollMode, color, fontSize, line, wrap, scrollSpeed, scrollDirection);
 
     // 应用设置
     displayManager.setTextSize(fontSize);
@@ -317,11 +318,11 @@ void WiFiManager::parseAndDisplayText(const char* payload) {
 }
 
 void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
-    Serial.printf("收到图片MQTT消息，大小: %d 字节\n", length);
+    DEBUG_LOG("收到图片MQTT消息，大小: %d 字节\n", length);
 
     // 检查消息大小
     if (length > MAX_MQTT_PAYLOAD_SIZE) {
-        Serial.printf("警告：MQTT消息过大 %d 字节，超出限制 %d 字节\n", length, MAX_MQTT_PAYLOAD_SIZE);
+        DEBUG_LOG("警告：MQTT消息过大 %d 字节，超出限制 %d 字节\n", length, MAX_MQTT_PAYLOAD_SIZE);
         return;
     }
 
@@ -330,7 +331,7 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
     const char* imageBase64Start = strstr(payloadStr, "\"image_base64\":\"");
 
     if (imageBase64Start == nullptr) {
-        Serial.println("图片消息缺少 image_base64 字段");
+        DEBUG_LOG("图片消息缺少 image_base64 字段\n");
         return;
     }
 
@@ -341,17 +342,17 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
     const char* imageBase64End = strchr(imageBase64Start, '"');
 
     if (imageBase64End == nullptr) {
-        Serial.println("图片消息的 image_base64 字段格式错误");
+        DEBUG_LOG("图片消息的 image_base64 字段格式错误\n");
         return;
     }
 
     // 计算base64数据长度
     int imageLength = imageBase64End - imageBase64Start;
-    Serial.printf("收到图片数据，base64长度: %d 字节\n", imageLength);
+    DEBUG_LOG("收到图片数据，base64长度: %d 字节\n", imageLength);
 
     // 检查base64数据大小是否超过限制
     if (imageLength > MAX_MQTT_PAYLOAD_SIZE) {
-        Serial.printf("警告：base64数据过大 %d 字节，超出限制 %d 字节\n", imageLength, MAX_MQTT_PAYLOAD_SIZE);
+        DEBUG_LOG("警告：base64数据过大 %d 字节，超出限制 %d 字节\n", imageLength, MAX_MQTT_PAYLOAD_SIZE);
         return;
     }
 
@@ -360,7 +361,7 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
 }
 
 void WiFiManager::startConfigMode() {
-    Serial.println("启动AP配网模式...");
+    DEBUG_LOG("启动AP配网模式...\n");
 
     // 停止现有WiFi连接
     WiFi.disconnect();
@@ -371,10 +372,10 @@ void WiFiManager::startConfigMode() {
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
     WiFi.softAP(AP_SSID);
 
-    Serial.printf("AP已启动: %s\n", AP_SSID);
-    Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
-    Serial.printf("AP网关: %s\n", WiFi.softAPIP().toString().c_str());
-    Serial.printf("AP子网掩码: 255.255.255.0\n");
+    DEBUG_LOG("AP已启动: %s\n", AP_SSID);
+    DEBUG_LOG("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+    DEBUG_LOG("AP网关: %s\n", WiFi.softAPIP().toString().c_str());
+    DEBUG_LOG("AP子网掩码: 255.255.255.0\n");
 
     // 显示配网信息到LED屏幕
     displayManager.setTextSize(1);
@@ -388,7 +389,7 @@ void WiFiManager::startConfigMode() {
         dnsServer = new DNSServer();
     }
     dnsServer->start(DNS_PORT, "*", WiFi.softAPIP());
-    Serial.println("DNS服务器已启动，监听端口53");
+    DEBUG_LOG("DNS服务器已启动，监听端口53\n");
 
     // 初始化Web服务器
     if (!webServer) {
@@ -411,9 +412,9 @@ void WiFiManager::startConfigMode() {
     webServer->begin();
     isConfigMode = true;
 
-    Serial.println("Web服务器已启动，监听端口80");
-    Serial.println("支持Captive Portal自动跳转");
-    Serial.println("访问地址: http://192.168.4.1");
+    DEBUG_LOG("Web服务器已启动，监听端口80\n");
+    DEBUG_LOG("支持Captive Portal自动跳转\n");
+    DEBUG_LOG("访问地址: http://192.168.4.1\n");
 }
 
 void WiFiManager::handleRoot() {
@@ -499,13 +500,13 @@ void WiFiManager::handleRoot() {
 }
 
 void WiFiManager::handleScan() {
-    Serial.println("扫描WiFi网络...");
+    DEBUG_LOG("扫描WiFi网络...\n");
 
     // 扫描期间喂狗
     esp_task_wdt_reset();
 
     int n = WiFi.scanNetworks();
-    Serial.printf("找到 %d 个网络\n", n);
+    DEBUG_LOG("找到 %d 个网络\n", n);
 
     String json = "{\"networks\":[";
 
@@ -540,7 +541,7 @@ void WiFiManager::handleSave() {
         return;
     }
 
-    Serial.printf("保存WiFi配置: SSID=%s, Password=***\n", ssid.c_str());
+    DEBUG_LOG("保存WiFi配置: SSID=%s, Password=***\n", ssid.c_str());
 
     // 保存到Preferences
     preferences.putString("wifi_ssid", ssid);

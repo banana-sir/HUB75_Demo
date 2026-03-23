@@ -1,6 +1,7 @@
 #include "DisplayManager.h"
 #include "WiFiManager.h"
 #include "esp_task_wdt.h"
+#include "config.h"
 
 DisplayManager displayManager;
 WiFiManager wifiManager;
@@ -17,11 +18,11 @@ void wifiTaskFunction(void *pvParameters) {
 }
 
 void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(115200);
-  Serial.println("Starting...");
-  Serial.printf("CPU 核数: %d\n", ESP.getChipCores());
-  Serial.printf("当前运行在: Core %d\n", xPortGetCoreID());
+  // 初始化调试串口
+  DEBUG_LOG_INIT(115200);
+  DEBUG_LOG("Starting...\n");
+  DEBUG_LOG("CPU 核数: %d\n", ESP.getChipCores());
+  DEBUG_LOG("当前运行在: Core %d\n", xPortGetCoreID());
 
   // 配置看门狗，延长超时时间
   esp_task_wdt_init(30, true); // 30秒超时
@@ -41,8 +42,8 @@ void setup() {
     0                   // Core 0
   );
 
-  Serial.printf("WiFi/MQTT 任务已创建，运行在 Core 0\n");
-  Serial.printf("DisplayManager 任务运行在 Core 1\n");
+  DEBUG_LOG("WiFi/MQTT 任务已创建，运行在 Core 0\n");
+  DEBUG_LOG("DisplayManager 任务运行在 Core 1\n");
 }
 
 

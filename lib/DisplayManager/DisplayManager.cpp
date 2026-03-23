@@ -1,6 +1,7 @@
 #include "DisplayManager.h"
 #include <base64.hpp>
 #include "esp_task_wdt.h"
+#include "config.h"
 
 
 DisplayManager::DisplayManager() :
@@ -473,33 +474,33 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
 
 void DisplayManager::displayImage(const char *base64Data, int length) {
     if (base64Data == nullptr || length == 0) {
-        Serial.println("displayImage: 数据为空");
+        DEBUG_LOG("displayImage: 数据为空\n");
         return;
     }
 
     // 计算base64解码后的数据大小
     unsigned int decodedLen = decode_base64_length((const unsigned char*)base64Data, length);
 
-    Serial.printf("displayImage: base64输入 %d 字节, 预计解码 %d 字节\n", length, decodedLen);
+    DEBUG_LOG("displayImage: base64输入 %d 字节, 预计解码 %d 字节\n", length, decodedLen);
 
     int imageSize = PANEL_RES_X * PANEL_RES_Y * 2;  // rgb565每个像素2字节
-    Serial.printf("displayImage: 期望图像大小 %d 字节 (%dx%d)\n", imageSize, PANEL_RES_X, PANEL_RES_Y);
+    DEBUG_LOG("displayImage: 期望图像大小 %d 字节 (%dx%d)\n", imageSize, PANEL_RES_X, PANEL_RES_Y);
 
     if (decodedLen == 0) {
-        Serial.println("displayImage: base64数据无效");
+        DEBUG_LOG("displayImage: base64数据无效\n");
         return;
     }
 
     // 分配内存
     uint8_t *decodedData = (uint8_t *)malloc(decodedLen);
     if (decodedData == nullptr) {
-        Serial.println("displayImage: 内存分配失败");
+        DEBUG_LOG("displayImage: 内存分配失败\n");
         return;
     }
 
     // 解码base64数据
     decode_base64((const unsigned char*)base64Data, length, decodedData);
-    Serial.printf("displayImage: 解码完成\n");
+    DEBUG_LOG("displayImage: 解码完成\n");
 
     // 计算图像尺寸
     int dataSize = min((int)decodedLen, imageSize);
@@ -525,11 +526,11 @@ void DisplayManager::displayImage(const char *base64Data, int length) {
         }
     }
 
-    Serial.printf("displayImage: 已绘制 %d 像素\n", pixelCount);
+    DEBUG_LOG("displayImage: 已绘制 %d 像素\n", pixelCount);
 
     // 刷新屏幕
     dma_display->flipDMABuffer();
-    Serial.println("displayImage: 屏幕刷新完成");
+    DEBUG_LOG("displayImage: 屏幕刷新完成\n");
 
     // 释放内存
     free(decodedData);

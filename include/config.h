@@ -1,7 +1,17 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define LED_SIZE 0 // 0: 64x32, 1: 64x64
+#define DEBUG_MODE 1     // 0: 关闭调试模式, 1: 开启调试模式
+#define LED_SIZE 0       // 0: 64x32, 1: 64x64
+
+// 调试日志宏
+#if(DEBUG_MODE == 1)
+    #define DEBUG_LOG(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)
+    #define DEBUG_LOG_INIT(x) Serial.begin(x)
+#else
+    #define DEBUG_LOG(fmt, ...)
+    #define DEBUG_LOG_INIT(x)
+#endif  
 
 // HUB75E LED矩阵配置
 #if(LED_SIZE == 0)
