@@ -14,6 +14,14 @@ public:
         SCROLL_RIGHT = 1   // 向右滚动
     };
 
+    uint16_t blackColor; 
+    uint16_t whiteColor;
+    uint16_t redColor;
+    uint16_t greenColor;
+    uint16_t blueColor;
+    uint16_t yellowColor;
+    uint16_t pinkColor;
+    
 private:
     HUB75_I2S_CFG::i2s_pins _pins;
     MatrixPanel_I2S_DMA *dma_display;
@@ -50,14 +58,6 @@ private:
 public:
     DisplayManager();
     ~DisplayManager();
-
-    uint16_t blackColor; 
-    uint16_t whiteColor;
-    uint16_t redColor;
-    uint16_t greenColor;
-    uint16_t blueColor;
-    uint16_t yellowColor;
-    uint16_t pinkColor;
 
     void init();
     void loop();

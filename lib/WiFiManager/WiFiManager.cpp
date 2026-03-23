@@ -6,9 +6,6 @@
 #include <ArduinoJson.h>
 #include "esp_task_wdt.h"
 
-// 外部声明：跨核访问保护
-extern portMUX_TYPE displayMux;
-
 WiFiManager::WiFiManager() :
     mqttClient(nullptr),
     webServer(nullptr),
@@ -240,7 +237,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         this->parseAndDisplayText(msg.c_str());
     } else if (topicStr.equals(topicClear)) {
         // 解析 JSON
-        StaticJsonDocument<256> doc;
+        StaticJsonDocument<128> doc;
         DeserializationError error = deserializeJson(doc, msg.c_str());
 
         if (error) {
@@ -254,7 +251,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         }
     } else if (topicStr.equals(topicBrightness)) {
         // 解析 JSON
-        StaticJsonDocument<256> doc;
+        StaticJsonDocument<128> doc;
         DeserializationError error = deserializeJson(doc, msg.c_str());
 
         if (error) {
@@ -495,7 +492,7 @@ void WiFiManager::handleRoot() {
     html += "<script>";
     html += "function scanWiFi(){var list=document.getElementById('wifiList');list.innerHTML='<div class=\"loading\">正在扫描...</div>';fetch('/scan').then(r=>r.json()).then(d=>{if(d.networks.length>0){var html='';d.networks.forEach(n=>{var s=n.signal_strength>70?'强':(n.signal_strength>50?'中':'弱');html+='<div class=\"wifi-item\" onclick=\"selectWiFi(\\''+n.ssid+'\\')\">';html+='<div class=\"wifi-strength\">'+s+'</div>';html+='<div class=\"wifi-name\">'+n.ssid+'</div>';html+='<div class=\"wifi-info\">信号强度: '+n.signal_strength+'%</div>';html+='</div>'});list.innerHTML=html}else{list.innerHTML='<div class=\"loading\">未找到WiFi网络</div>'}}).catch(e=>{list.innerHTML='<div class=\"loading\">扫描失败，请重试</div>'})}";
     html += "function selectWiFi(ssid){document.getElementById('ssid').value=ssid}";
-    html += "document.getElementById('wifiForm').addEventListener('submit',function(e){e.preventDefault();var ssid=document.getElementById('ssid').value;var password=document.getElementById('password').value;fetch('/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password)}).then(r=>r.json()).then(d=>{if(d.success){document.querySelector('.content').innerHTML='<div class=\"status success\">✅ 保存成功！正在连接WiFi...</div><div class=\"status info\">请等待约10秒，然后刷新页面查看连接状态</div>'}else{document.querySelector('.content').innerHTML='<div class=\"status error\">❌ '+d.message+'</div>'}}).catch(e=>{document.querySelector('.content').innerHTML='<div class=\"status error\">❌ 保存失败，请重试</div>'})})";
+    html += "document.getElementById('wifiForm').addEventListener('submit',function(e){e.preventDefault();var ssid=document.getElementById('ssid').value;var password=document.getElementById('password').value;fetch('/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password)}).then(r=>r.json()).then(d=>{if(d.success){document.querySelector('.content').innerHTML='<div class=\"status success\">✅ 保存成功！正在连接WiFi...</div><div class=\"status info\">系统正在连接中，请耐心等待...</div>'}else{document.querySelector('.content').innerHTML='<div class=\"status error\">❌ '+d.message+'</div>'}}).catch(e=>{document.querySelector('.content').innerHTML='<div class=\"status error\">❌ 保存失败，请重试</div>'})})";
     html += "</script></body></html>";
 
     sendResponse(200, "text/html", html.c_str());

@@ -1,26 +1,51 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#define LED_SIZE 0 // 0: 64x32, 1: 64x64
+
 // HUB75E LED矩阵配置
-#define PANEL_RES_X 64      // LED矩阵宽度
-#define PANEL_RES_Y 64      // LED矩阵高度
-#define PANEL_CHAIN 1       // 矩阵链长度
+#if(LED_SIZE == 0)
+    #define PANEL_RES_X 64      // LED矩阵宽度
+    #define PANEL_RES_Y 32      // LED矩阵高度
+    #define PANEL_CHAIN 1       // 矩阵链长度
+#elif(LED_SIZE == 1)
+    #define PANEL_RES_X 64      // LED矩阵宽度
+    #define PANEL_RES_Y 64      // LED矩阵高度
+    #define PANEL_CHAIN 1       // 矩阵链长度
+#endif
 
 // GPIO引脚定义
-#define R1_PIN 6
-#define G1_PIN 7
-#define B1_PIN 8
-#define R2_PIN 9
-#define G2_PIN 10
-#define B2_PIN 11
-#define A_PIN 15
-#define B_PIN 16
-#define C_PIN 17
-#define D_PIN 18
-#define E_PIN 47 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e. 
-#define LAT_PIN 13
-#define OE_PIN 14
-#define CLK_PIN 12
+#if(LED_SIZE == 0)
+    #define R1_PIN 18
+    #define G1_PIN 36
+    #define B1_PIN 17
+    #define R2_PIN 16
+    #define G2_PIN 37
+    #define B2_PIN 15
+    #define A_PIN 7
+    #define B_PIN 39
+    #define C_PIN 6
+    #define D_PIN 40
+    #define E_PIN -1 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e.
+    #define LAT_PIN 41
+    #define OE_PIN 4
+    #define CLK_PIN 5
+#elif(LED_SIZE == 1)
+    #define R1_PIN 6
+    #define G1_PIN 7
+    #define B1_PIN 8
+    #define R2_PIN 9
+    #define G2_PIN 10
+    #define B2_PIN 11
+    #define A_PIN 15
+    #define B_PIN 16
+    #define C_PIN 17
+    #define D_PIN 18
+    #define E_PIN 47 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e. 
+    #define LAT_PIN 13
+    #define OE_PIN 14
+    #define CLK_PIN 12
+#endif
 
 #define DEFAULT_BRIGHTNESS 128  // 默认亮度 (0-255)
 
@@ -46,7 +71,11 @@
 
 #define MQTT_SERVER "zheng221.xyz"
 #define MQTT_PORT 1883
-#define MQTT_USERNAME "64x64esp32"
+#if(LED_SIZE == 0)
+    #define MQTT_USERNAME "64x32esp32"
+#elif(LED_SIZE == 1)
+    #define MQTT_USERNAME "64x64esp32"
+#endif
 #define MQTT_PASSWORD "123456"
 
 // MQTT主题由设备MAC地址动态生成，格式为：LED/{mac}/...
