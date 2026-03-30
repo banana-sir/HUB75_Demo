@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 #define DEBUG_MODE 1     // 0: 关闭调试模式, 1: 开启调试模式
-#define LED_SIZE 0       // 0: 64x32, 1: 64x64
+#define LED_SIZE 1       // 0: 64x32, 1: 64x64
 
 // 调试日志宏
 #if(DEBUG_MODE == 1)
@@ -63,16 +63,25 @@
 // 滚动文本配置
 // ============================================================================
 
+// // 滚动文本延迟（ms）- 当前各速度档位统一使用相同值
+// #define SCROLL_TIME_DELAY 36
+
+// // 滚动文本像素偏移（负值表示向左滚动）
+// #define SCROLL_OFFSET_LEFT_LOW -1
+// #define SCROLL_OFFSET_LEFT_MEDIUM -2
+// #define SCROLL_OFFSET_LEFT_FAST -3
+// #define SCROLL_OFFSET_RIGHT_LOW 1
+// #define SCROLL_OFFSET_RIGHT_MEDIUM 2
+// #define SCROLL_OFFSET_RIGHT_FAST 3
+
 // 滚动文本延迟（ms）- 当前各速度档位统一使用相同值
-#define SCROLL_TIME_DELAY 36
+#define SCROLL_TIME_DELAY_LOW 45
+#define SCROLL_TIME_DELAY_MEDIUM 32
+#define SCROLL_TIME_DELAY_FAST 20
 
 // 滚动文本像素偏移（负值表示向左滚动）
-#define SCROLL_OFFSET_LEFT_LOW -1
-#define SCROLL_OFFSET_LEFT_MEDIUM -2
-#define SCROLL_OFFSET_LEFT_FAST -3
-#define SCROLL_OFFSET_RIGHT_LOW 1
-#define SCROLL_OFFSET_RIGHT_MEDIUM 2
-#define SCROLL_OFFSET_RIGHT_FAST 3
+#define SCROLL_OFFSET_LEFT -1
+#define SCROLL_OFFSET_RIGHT 1
 
 // ============================================================================
 // WiFi 和 MQTT 配置

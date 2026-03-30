@@ -30,6 +30,8 @@ void DisplayManager::init() {
         _pins          // 引脚映射
     );
 
+    // mxconfig.double_buff = true; // 启用DMA双缓冲
+
     dma_display = new MatrixPanel_I2S_DMA(mxconfig);
     dma_display->begin();
     dma_display->setBrightness(DEFAULT_BRIGHTNESS);
@@ -61,27 +63,11 @@ void DisplayManager::loop() {
 
     unsigned long now = millis();
 
-    // 检查是否有任何滚动行需要更新
-    bool hasScrollingLines = false;
-    for (int i = 0; i < maxLines; i++) {
-        if (scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
-            hasScrollingLines = true;
-            break;
-        }
-    }
-
-    // 如果没有滚动行，直接返回
-    if (!hasScrollingLines) return;
-
-    // 标记是否有任何行被更新
-    bool hasUpdated = false;
-
     // 更新所有激活的滚动行，每行独立更新
     for (int i = 0; i < maxLines; i++) {
         if (scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
             // 检查该行是否到达更新时间
             if (now > scrollLines[i].lastUpdateTime) {
-                hasUpdated = true;
                 int yPosition = scrollLines[i].yPosition;
                 int lineHeight = scrollLines[i].textSize * 16;
 
@@ -125,11 +111,6 @@ void DisplayManager::loop() {
             }
         }
     }
-
-    // 只有在有内容更新时才刷新DMA缓冲区，避免不必要的闪烁
-    if (hasUpdated) {
-        dma_display->flipDMABuffer();
-    }
 }
 
 void DisplayManager::freeAllScrollLines() {
@@ -162,22 +143,21 @@ void DisplayManager::clearScrollLine(int line) {
 
 void DisplayManager::calculateScrollSpeedParams(int speed, int& xMove, int& timeDelay, ScrollDirection direction) {
     // 根据滚动速度等级计算对应的像素移动值和时间延迟
+    // 像素偏移统一为1，通过调整时间延迟来控制速度
+    xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT : SCROLL_OFFSET_RIGHT;
+
     switch (speed) {
         case 1:
-            xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT_LOW : SCROLL_OFFSET_RIGHT_LOW;
-            timeDelay = SCROLL_TIME_DELAY;
+            timeDelay = SCROLL_TIME_DELAY_LOW;
             break;
         case 2:
-            xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT_MEDIUM : SCROLL_OFFSET_RIGHT_MEDIUM;
-            timeDelay = SCROLL_TIME_DELAY;
+            timeDelay = SCROLL_TIME_DELAY_MEDIUM;
             break;
         case 3:
-            xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT_FAST : SCROLL_OFFSET_RIGHT_FAST;
-            timeDelay = SCROLL_TIME_DELAY;
+            timeDelay = SCROLL_TIME_DELAY_FAST;
             break;
         default:
-            xMove = (direction == SCROLL_LEFT) ? SCROLL_OFFSET_LEFT_LOW : SCROLL_OFFSET_RIGHT_LOW;
-            timeDelay = SCROLL_TIME_DELAY;
+            timeDelay = SCROLL_TIME_DELAY_MEDIUM;
             break;
     }
 }
@@ -527,10 +507,6 @@ void DisplayManager::displayImage(const char *base64Data, int length) {
     }
 
     DEBUG_LOG("displayImage: 已绘制 %d 像素\n", pixelCount);
-
-    // 刷新屏幕
-    dma_display->flipDMABuffer();
-    DEBUG_LOG("displayImage: 屏幕刷新完成\n");
 
     // 释放内存
     free(decodedData);
