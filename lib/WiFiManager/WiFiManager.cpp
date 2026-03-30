@@ -47,7 +47,7 @@ void WiFiManager::connectWiFi() {
         DEBUG_LOG("正在连接WiFi...\n");
         //displayManager.clearAll();
         displayManager.setTextSize(1);
-        displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor);
+        displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor, 1);
         connectionStatusDisplayed = true;
     }
 
@@ -157,7 +157,7 @@ void WiFiManager::loop() {
         if (WiFi.status() == WL_CONNECTED) {
             DEBUG_LOG("\nWiFi连接成功! IP: %s\n", WiFi.localIP().toString().c_str());
             displayManager.setTextSize(1);
-            displayManager.displayText("WiFi连接成功", false, displayManager.whiteColor);
+            displayManager.displayText("WiFi连接成功", false, displayManager.whiteColor, 1);
             isConnecting = false;
             connectionStatusDisplayed = false;
             mqttFailCount = 0;  // WiFi连接成功，重置MQTT失败计数
@@ -189,7 +189,7 @@ void WiFiManager::loop() {
                     DEBUG_LOG("已订阅主题: %s\n", topicBrightness.c_str());
                     mqttClient->subscribe(topicImage.c_str());
                     DEBUG_LOG("已订阅主题: %s\n", topicImage.c_str());
-                    displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor);
+                    displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor, 1);
 
                     // 连接成功，重置失败计数
                     mqttFailCount = 0;
@@ -379,7 +379,7 @@ void WiFiManager::startConfigMode() {
 
     // 显示配网信息到LED屏幕
     displayManager.setTextSize(1);
-    displayManager.displayText("配网模式", false, displayManager.whiteColor);
+    displayManager.displayText("配网模式", false, displayManager.whiteColor, 1);  // 指定line=1，避免全屏清除
     
     String apInfo = "请连接热点：" + String(AP_SSID);
     displayManager.displayText(apInfo.c_str(), true, displayManager.whiteColor, 2);
@@ -557,7 +557,7 @@ void WiFiManager::handleSave() {
 
     // 更新显示
     displayManager.setTextSize(1);
-    displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor);
+    displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor, 1);
 
     // 关闭配网模式
     isConfigMode = false;

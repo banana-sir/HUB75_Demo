@@ -63,25 +63,14 @@
 // 滚动文本配置
 // ============================================================================
 
-// // 滚动文本延迟（ms）- 当前各速度档位统一使用相同值
-// #define SCROLL_TIME_DELAY 36
+// 滚动速度档位对应的更新间隔（毫秒）
+#define SCROLL_INTERVAL_SLOW 50      // 慢速：每50ms移动1像素
+#define SCROLL_INTERVAL_MEDIUM 35    // 中速：每35ms移动1像素
+#define SCROLL_INTERVAL_FAST 20     // 快速：每20ms移动1像素
 
-// // 滚动文本像素偏移（负值表示向左滚动）
-// #define SCROLL_OFFSET_LEFT_LOW -1
-// #define SCROLL_OFFSET_LEFT_MEDIUM -2
-// #define SCROLL_OFFSET_LEFT_FAST -3
-// #define SCROLL_OFFSET_RIGHT_LOW 1
-// #define SCROLL_OFFSET_RIGHT_MEDIUM 2
-// #define SCROLL_OFFSET_RIGHT_FAST 3
-
-// 滚动文本延迟（ms）- 当前各速度档位统一使用相同值
-#define SCROLL_TIME_DELAY_LOW 45
-#define SCROLL_TIME_DELAY_MEDIUM 32
-#define SCROLL_TIME_DELAY_FAST 20
-
-// 滚动文本像素偏移（负值表示向左滚动）
-#define SCROLL_OFFSET_LEFT -1
-#define SCROLL_OFFSET_RIGHT 1
+// 滚动像素偏移（每次更新移动的像素数）
+#define SCROLL_OFFSET_LEFT -1       // 向左滚动
+#define SCROLL_OFFSET_RIGHT 1       // 向右滚动
 
 // ============================================================================
 // WiFi 和 MQTT 配置
