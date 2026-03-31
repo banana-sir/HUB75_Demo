@@ -19,7 +19,9 @@ WiFiManager::WiFiManager() :
     connectionStatusDisplayed(false),
     isConfigMode(false),
     connectStartTime(0),
-    mqttWasConnected(false) {
+    mqttWasConnected(false),
+    mqttMessageQueue(nullptr),
+    mqttProcessTaskHandle(nullptr) {
 }
 
 WiFiManager::~WiFiManager() {
@@ -123,9 +125,124 @@ void WiFiManager::init() {
         });
     }
 
+    // 创建 MQTT 消息处理队列和任务
+    if (mqttMessageQueue == nullptr) {
+        mqttMessageQueue = xQueueCreate(8, sizeof(MqttMessageItem*));
+        if (mqttMessageQueue == nullptr) {
+            DEBUG_LOG("MQTT消息队列创建失败\n");
+        }
+    }
+    if (mqttProcessTaskHandle == nullptr && mqttMessageQueue != nullptr) {
+        BaseType_t taskCreated = xTaskCreatePinnedToCore(
+            mqttProcessTaskEntry,
+            "MqttProc",
+            8192,
+            this,
+            1,
+            &mqttProcessTaskHandle,
+            0
+        );
+        if (taskCreated != pdPASS) {
+            DEBUG_LOG("MQTT处理任务创建失败\n");
+            mqttProcessTaskHandle = nullptr;
+        }
+    }
+
     // 首次连接 WiFi
     connectWiFi();
     wifiInitialized = true;
+}
+
+bool WiFiManager::enqueueMqttMessage(const char* topic, const byte* payload, unsigned int length) {
+    if (mqttMessageQueue == nullptr) {
+        return false;
+    }
+
+    MqttMessageItem *item = (MqttMessageItem *)malloc(sizeof(MqttMessageItem));
+    if (item == nullptr) {
+        return false;
+    }
+    memset(item, 0, sizeof(MqttMessageItem));
+    strncpy(item->topic, topic ? topic : "", sizeof(item->topic) - 1);
+    item->topic[sizeof(item->topic) - 1] = '\0';
+    item->length = length;
+
+    item->payload = (byte *)malloc(length + 1);
+    if (item->payload == nullptr) {
+        free(item);
+        return false;
+    }
+    if (length > 0) {
+        memcpy(item->payload, payload, length);
+    }
+    item->payload[length] = '\0';
+
+    if (xQueueSend(mqttMessageQueue, &item, 0) != pdTRUE) {
+        free(item->payload);
+        free(item);
+        return false;
+    }
+
+    return true;
+}
+
+void WiFiManager::mqttProcessTaskEntry(void *param) {
+    WiFiManager *self = static_cast<WiFiManager *>(param);
+    if (self) {
+        self->mqttProcessTask();
+    }
+    vTaskDelete(NULL);
+}
+
+void WiFiManager::mqttProcessTask() {
+    MqttMessageItem *item = nullptr;
+
+    while (true) {
+        if (mqttMessageQueue && xQueueReceive(mqttMessageQueue, &item, portMAX_DELAY) == pdTRUE) {
+            if (item == nullptr) {
+                continue;
+            }
+
+            String topicStr(item->topic);
+
+            if (topicStr.equals(topicText)) {
+                parseAndDisplayText((const char *)item->payload);
+            } else if (topicStr.equals(topicClear)) {
+                StaticJsonDocument<128> doc;
+                DeserializationError error = deserializeJson(doc, (const char *)item->payload);
+                if (error) {
+                    DEBUG_LOG("Clear消息JSON解析失败: %s\n", error.c_str());
+                } else {
+                    bool clear = doc["clear"] | false;
+                    if (clear) {
+                        displayManager.clearAll();
+                        DEBUG_LOG("MQTT回调：已清除显示内容\n");
+                    }
+                }
+            } else if (topicStr.equals(topicBrightness)) {
+                StaticJsonDocument<128> doc;
+                DeserializationError error = deserializeJson(doc, (const char *)item->payload);
+                if (error) {
+                    DEBUG_LOG("Brightness消息JSON解析失败: %s\n", error.c_str());
+                } else {
+                    int b = doc["brightness"] | 128;
+                    if (b < 0) b = 0;
+                    if (b > 255) b = 255;
+                    displayManager.setBrightness((uint8_t)b);
+                    DEBUG_LOG("MQTT回调：已设置亮度 %d\n", b);
+                }
+            } else if (topicStr.equals(topicImage)) {
+                parseAndDisplayImage(item->payload, item->length);
+            } else {
+                DEBUG_LOG("未知主题: %s\n", item->topic);
+            }
+
+            if (item->payload) {
+                free(item->payload);
+            }
+            free(item);
+        }
+    }
 }
 
 void WiFiManager::loop() {
@@ -228,52 +345,8 @@ bool WiFiManager::isMqttConnected() {
 }
 
 void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) {
-    String topicStr = String(topic);
-
-    String msg;
-    msg.reserve(length + 1);
-    for (unsigned int i = 0; i < length; i++) {
-        msg += (char)payload[i];
-    }
-    msg.trim();
-
-    if (topicStr.equals(topicText)) {
-        this->parseAndDisplayText(msg.c_str());
-    } else if (topicStr.equals(topicClear)) {
-        // 解析 JSON
-        StaticJsonDocument<128> doc;
-        DeserializationError error = deserializeJson(doc, msg.c_str());
-
-        if (error) {
-            DEBUG_LOG("Clear消息JSON解析失败: %s\n", error.c_str());
-            return;
-        }
-
-        bool clear = doc["clear"] | false;
-        if (clear) {
-            displayManager.clearAll();
-            DEBUG_LOG("MQTT回调：已清除显示内容\n");
-        }
-    } else if (topicStr.equals(topicBrightness)) {
-        // 解析 JSON
-        StaticJsonDocument<128> doc;
-        DeserializationError error = deserializeJson(doc, msg.c_str());
-
-        if (error) {
-            DEBUG_LOG("Brightness消息JSON解析失败: %s\n", error.c_str());
-            return;
-        }
-
-        int b = doc["brightness"] | 128;
-        if (b < 0) b = 0;
-        if (b > 255) b = 255;
-        displayManager.setBrightness((uint8_t)b);
-        DEBUG_LOG("MQTT回调：已设置亮度 %d\n", b);
-    } else if (topicStr.equals(topicImage)) {
-        // 图片消息直接传递原始 payload，避免大 JSON 文档在栈上分配
-        this->parseAndDisplayImage(payload, length);
-    } else {
-        DEBUG_LOG("未知主题: %s\n", topic);
+    if (!enqueueMqttMessage(topic, payload, length)) {
+        DEBUG_LOG("MQTT回调：消息入队失败，已丢弃\n");
     }
 }
 

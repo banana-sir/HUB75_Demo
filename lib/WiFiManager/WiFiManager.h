@@ -3,6 +3,9 @@
 
 #include <WiFi.h>
 #include <Preferences.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
 // 前置声明，减少头文件依赖，加快编译
 class WebServer;
@@ -60,7 +63,19 @@ private:
     // MQTT 状态跟踪
     bool mqttWasConnected;                    // MQTT之前是否已连接过
 
+    // MQTT回调消息队列
+    struct MqttMessageItem {
+        char topic[64];
+        byte *payload;
+        unsigned int length;
+    };
+    QueueHandle_t mqttMessageQueue;           // MQTT消息队列
+    TaskHandle_t mqttProcessTaskHandle;       // MQTT消息处理任务句柄
+
     // 私有方法
+    bool enqueueMqttMessage(const char* topic, const byte* payload, unsigned int length);
+    static void mqttProcessTaskEntry(void *param);
+    void mqttProcessTask();
     void mqttCallback(char* topic, byte* payload, unsigned int length);  // MQTT回调函数，处理接收到的消息
     void parseAndDisplayText(const char* payload);    // 解析MQTT文本消息并显示到LED屏幕
     void parseAndDisplayImage(byte* payload, unsigned int length);  // 解析MQTT图片消息并显示到LED屏幕

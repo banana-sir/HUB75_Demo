@@ -64,7 +64,7 @@
 // ============================================================================
 
 // 滚动速度档位对应的更新间隔（毫秒）
-#define SCROLL_INTERVAL_SLOW 50      // 慢速：每50ms移动1像素
+#define SCROLL_INTERVAL_SLOW 45      // 慢速：每45ms移动1像素
 #define SCROLL_INTERVAL_MEDIUM 35    // 中速：每35ms移动1像素
 #define SCROLL_INTERVAL_FAST 20     // 快速：每20ms移动1像素
 
