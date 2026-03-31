@@ -45,7 +45,7 @@ void WiFiManager::connectWiFi() {
     // 显示连接提示（如果是第一次显示）
     if (!connectionStatusDisplayed) {
         DEBUG_LOG("正在连接WiFi...\n");
-        //displayManager.clearAll();
+        displayManager.clearAll();
         displayManager.setTextSize(1);
         displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor, 1);
         connectionStatusDisplayed = true;
@@ -156,6 +156,7 @@ void WiFiManager::loop() {
     if (isConnecting) {
         if (WiFi.status() == WL_CONNECTED) {
             DEBUG_LOG("\nWiFi连接成功! IP: %s\n", WiFi.localIP().toString().c_str());
+            displayManager.clearAll();
             displayManager.setTextSize(1);
             displayManager.displayText("WiFi连接成功", false, displayManager.whiteColor, 1);
             isConnecting = false;
@@ -181,14 +182,16 @@ void WiFiManager::loop() {
 
                 if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
                     DEBUG_LOG("MQTT服务器已连接\n");
-                    mqttClient->subscribe(topicText.c_str());
+                    mqttClient->subscribe(topicText.c_str(), 1);
                     DEBUG_LOG("已订阅主题: %s\n", topicText.c_str());
-                    mqttClient->subscribe(topicClear.c_str());
+                    mqttClient->subscribe(topicClear.c_str(), 1);
                     DEBUG_LOG("已订阅主题: %s\n", topicClear.c_str());
-                    mqttClient->subscribe(topicBrightness.c_str());
+                    mqttClient->subscribe(topicBrightness.c_str(), 1);
                     DEBUG_LOG("已订阅主题: %s\n", topicBrightness.c_str());
-                    mqttClient->subscribe(topicImage.c_str());
+                    mqttClient->subscribe(topicImage.c_str(), 1);
                     DEBUG_LOG("已订阅主题: %s\n", topicImage.c_str());
+                    displayManager.clearAll();
+                    displayManager.setTextSize(1);
                     displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor, 1);
 
                     // 连接成功，重置失败计数
@@ -249,6 +252,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         bool clear = doc["clear"] | false;
         if (clear) {
             displayManager.clearAll();
+            DEBUG_LOG("MQTT回调：已清除显示内容\n");
         }
     } else if (topicStr.equals(topicBrightness)) {
         // 解析 JSON
@@ -264,6 +268,7 @@ void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         if (b < 0) b = 0;
         if (b > 255) b = 255;
         displayManager.setBrightness((uint8_t)b);
+        DEBUG_LOG("MQTT回调：已设置亮度 %d\n", b);
     } else if (topicStr.equals(topicImage)) {
         // 图片消息直接传递原始 payload，避免大 JSON 文档在栈上分配
         this->parseAndDisplayImage(payload, length);
@@ -378,6 +383,7 @@ void WiFiManager::startConfigMode() {
     DEBUG_LOG("AP子网掩码: 255.255.255.0\n");
 
     // 显示配网信息到LED屏幕
+    displayManager.clearAll();
     displayManager.setTextSize(1);
     displayManager.displayText("配网模式", false, displayManager.whiteColor, 1);  // 指定line=1，避免全屏清除
     
@@ -585,5 +591,3 @@ void WiFiManager::handleNotFound() {
 void WiFiManager::sendResponse(int code, const char* type, const char* content) {
     webServer->send(code, type, content);
 }
-
-

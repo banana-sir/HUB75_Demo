@@ -221,9 +221,23 @@ void DisplayManager::renderScrollingTexts() {
 
     for (int i = 0; i < maxLines; i++) {
         if (scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
+            // 如果文本完全超出屏幕，则跳过绘制
+            int xPos = scrollLines[i].xPosition;
+            int textWidth = scrollLines[i].cachedTextWidth;
+            if (xPos >= PANEL_RES_X || xPos + textWidth <= 0) {
+                continue;
+            }
+
+            // 先清除本行显示区域，避免旧静态文本或重叠内容干扰
+            int lineHeight = getScrollTextHeight(i);
+            if (lineHeight > 0) {
+                dma_display->fillRect(0, scrollLines[i].yPosition, PANEL_RES_X, lineHeight, blackColor);
+            }
+
             // 绘制滚动文本
             dma_display->setTextSize(scrollLines[i].textSize);
             dma_display->setTextColor(scrollLines[i].color);
+            dma_display->setTextWrap(false);
             dma_display->setCursor(scrollLines[i].xPosition, scrollLines[i].yPosition);
             dma_display->printUTF8(scrollLines[i].content);
         }
@@ -609,7 +623,9 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
         return;
     }
 
-    // 滚动文本模式：保存滚动文本信息（保持原有逻辑，不赫接绘制）
+    // 滚动文本模式：保存滚动文本信息（保持原有逻辑，不直接绘制）
+    clearFullScreenContent();
+
     if (line < 1 || line > maxLines) line = 1;
     int index = line - 1;
 
