@@ -39,7 +39,6 @@ private:
     // WiFi状态标志
     bool wifiInitialized;                     // WiFi模块是否已初始化（调用过connectWiFi至少一次）
     bool isConnecting;                       // WiFi是否正在连接中（用于超时检测和阻止MQTT连接）
-    bool connectionStatusDisplayed;           // 连接状态信息是否已显示到LED屏幕（避免重复显示）
 
     // 配网模式
     bool isConfigMode;                       // 当前是否处于配网模式（AP + WebServer）

@@ -63,7 +63,8 @@ private:
     int maxLines;              // 最大行数（由PANEL_RES_Y/16计算得出，支持最多4个滚动文本）
     bool isFullScreenDisplay;  // 标记是否为全屏显示模式
     char *fullScreenContent;   // 全屏显示的文本内容
-    
+    bool isImageDisplayMode;   // 标记是否为图片显示模式
+
     // 帧时间控制
     unsigned long lastFrameTime;  // 上一帧的时间戳
     unsigned long frameInterval;  // 目标帧间隔（毫秒）

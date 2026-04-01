@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 #define DEBUG_MODE 1     // 0: 关闭调试模式, 1: 开启调试模式
-#define LED_SIZE 1       // 0: 64x32, 1: 64x64
+#define LED_SIZE 0       // 0: 64x32, 1: 64x64
 
 // 调试日志宏
 #if(DEBUG_MODE == 1)
@@ -27,17 +27,17 @@
 // GPIO引脚定义
 #if(LED_SIZE == 0)
     #define R1_PIN 18
-    #define G1_PIN 36
+    #define G1_PIN 38
     #define B1_PIN 17
     #define R2_PIN 16
-    #define G2_PIN 37
+    #define G2_PIN 39
     #define B2_PIN 15
     #define A_PIN 7
-    #define B_PIN 39
+    #define B_PIN 41
     #define C_PIN 6
-    #define D_PIN 40
+    #define D_PIN 2
     #define E_PIN -1 // required for 1/32 scan panels, like 64x64px. Any available pin would do, i.e.
-    #define LAT_PIN 41
+    #define LAT_PIN 1
     #define OE_PIN 4
     #define CLK_PIN 5
 #elif(LED_SIZE == 1)

@@ -16,7 +16,6 @@ WiFiManager::WiFiManager() :
     mqttFailCount(0),
     wifiInitialized(false),
     isConnecting(false),
-    connectionStatusDisplayed(false),
     isConfigMode(false),
     connectStartTime(0),
     mqttWasConnected(false),
@@ -44,14 +43,11 @@ void WiFiManager::connectWiFi() {
     isConnecting = true;
     connectStartTime = millis();
 
-    // 显示连接提示（如果是第一次显示）
-    if (!connectionStatusDisplayed) {
-        DEBUG_LOG("正在连接WiFi...\n");
-        displayManager.clearAll();
-        displayManager.setTextSize(1);
-        displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor, 1);
-        connectionStatusDisplayed = true;
-    }
+    // 显示连接提示
+    DEBUG_LOG("正在连接WiFi...\n");
+    displayManager.clearAll();
+    displayManager.setTextSize(1);
+    displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor, 1);
 
     // 从Preferences读取保存的WiFi信息
     String ssid = preferences.getString("wifi_ssid", "");
@@ -63,7 +59,6 @@ void WiFiManager::connectWiFi() {
     } else {
         DEBUG_LOG("未找到保存的WiFi信息，进入配网模式\n");
         isConnecting = false;
-        connectionStatusDisplayed = false;
         startConfigMode();
         return;
     }
@@ -81,9 +76,6 @@ void WiFiManager::reconnectWiFi() {
         delay(50);
         waitCount++;
     }
-
-    // 重置连接状态标志
-    connectionStatusDisplayed = false;
 
     // 开始重新连接
     connectWiFi();
@@ -206,8 +198,11 @@ void WiFiManager::mqttProcessTask() {
             String topicStr(item->topic);
 
             if (topicStr.equals(topicText)) {
+                DEBUG_LOG("MQTT消息处理: 收到文本消息, payload长度=%d 字节\n", strlen((const char *)item->payload));
                 parseAndDisplayText((const char *)item->payload);
+                DEBUG_LOG("MQTT消息处理: 文本消息处理完成\n");
             } else if (topicStr.equals(topicClear)) {
+                DEBUG_LOG("MQTT消息处理: 收到清屏消息, payload长度=%d 字节\n", strlen((const char *)item->payload));
                 StaticJsonDocument<128> doc;
                 DeserializationError error = deserializeJson(doc, (const char *)item->payload);
                 if (error) {
@@ -215,11 +210,13 @@ void WiFiManager::mqttProcessTask() {
                 } else {
                     bool clear = doc["clear"] | false;
                     if (clear) {
+                        DEBUG_LOG("MQTT消息处理: 执行清屏操作\n");
                         displayManager.clearAll();
-                        DEBUG_LOG("MQTT回调：已清除显示内容\n");
+                        DEBUG_LOG("MQTT消息处理: 清屏完成\n");
                     }
                 }
             } else if (topicStr.equals(topicBrightness)) {
+                DEBUG_LOG("MQTT消息处理: 收到亮度设置消息, payload长度=%d 字节\n", strlen((const char *)item->payload));
                 StaticJsonDocument<128> doc;
                 DeserializationError error = deserializeJson(doc, (const char *)item->payload);
                 if (error) {
@@ -228,11 +225,14 @@ void WiFiManager::mqttProcessTask() {
                     int b = doc["brightness"] | 128;
                     if (b < 0) b = 0;
                     if (b > 255) b = 255;
+                    DEBUG_LOG("MQTT消息处理: 设置亮度 %d\n", b);
                     displayManager.setBrightness((uint8_t)b);
-                    DEBUG_LOG("MQTT回调：已设置亮度 %d\n", b);
+                    DEBUG_LOG("MQTT消息处理: 亮度设置完成\n");
                 }
             } else if (topicStr.equals(topicImage)) {
+                DEBUG_LOG("MQTT回调：收到图片消息, 大小: %d 字节\n", item->length);
                 parseAndDisplayImage(item->payload, item->length);
+                DEBUG_LOG("MQTT回调：图片处理完成\n");
             } else {
                 DEBUG_LOG("未知主题: %s\n", item->topic);
             }
@@ -277,12 +277,10 @@ void WiFiManager::loop() {
             displayManager.setTextSize(1);
             displayManager.displayText("WiFi连接成功", false, displayManager.whiteColor, 1);
             isConnecting = false;
-            connectionStatusDisplayed = false;
             mqttFailCount = 0;  // WiFi连接成功，重置MQTT失败计数
         } else if (millis() - connectStartTime >= connectTimeout) {
             DEBUG_LOG("\nWiFi连接超时，进入配网模式\n");
             isConnecting = false;
-            connectionStatusDisplayed = false;
             startConfigMode();
         }
     }
@@ -328,7 +326,24 @@ void WiFiManager::loop() {
                 }
             }
         } else {
+            static unsigned long lastMqttLoopTime = 0;
+            static int lastMqttState = -1;
+            int currentState = mqttClient->state();
+
+            // 只在MQTT状态变化时输出日志
+            if (currentState != lastMqttState) {
+                DEBUG_LOG("MQTT状态变化: %d -> %d\n", lastMqttState, currentState);
+                lastMqttState = currentState;
+            }
+
             mqttClient->loop();
+
+            // 每10秒输出一次MQTT心跳信息
+            unsigned long now = millis();
+            if (now - lastMqttLoopTime >= 10000) {
+                DEBUG_LOG("MQTT心跳: 已连接, 状态=%d, 服务器=%s:%d\n", currentState, MQTT_SERVER, MQTT_PORT);
+                lastMqttLoopTime = now;
+            }
         }
     } else {
         // WiFi断开时，重置MQTT状态
@@ -345,22 +360,28 @@ bool WiFiManager::isMqttConnected() {
 }
 
 void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) {
+    DEBUG_LOG("MQTT回调: 收到消息, 主题=%s, 长度=%d 字节\n", topic, length);
     if (!enqueueMqttMessage(topic, payload, length)) {
         DEBUG_LOG("MQTT回调：消息入队失败，已丢弃\n");
+    } else {
+        DEBUG_LOG("MQTT回调：消息已入队\n");
     }
 }
 
 void WiFiManager::parseAndDisplayText(const char* payload) {
-    DEBUG_LOG("收到文本MQTT消息\n");
+    unsigned long startTime = millis();
+    DEBUG_LOG("parseAndDisplayText: 开始处理, 时间: %lu ms\n", startTime);
+    DEBUG_LOG("parseAndDisplayText: payload长度: %d 字节\n", strlen(payload));
 
     // 解析 JSON
     StaticJsonDocument<512> doc;
     DeserializationError error = deserializeJson(doc, payload);
 
     if (error) {
-        DEBUG_LOG("JSON解析失败: %s\n", error.c_str());
+        DEBUG_LOG("parseAndDisplayText: JSON解析失败: %s\n", error.c_str());
         return;
     }
+    DEBUG_LOG("parseAndDisplayText: JSON解析完成, 耗时: %lu ms\n", millis() - startTime);
 
     // 提取字段
     const char* text = doc["text"];
@@ -372,6 +393,8 @@ void WiFiManager::parseAndDisplayText(const char* payload) {
     int scrollSpeed = doc["scroll_speed"] | 1;
     int scrollDirection = doc["scroll_direction"] | 0;  // 0=向左，1=向右
 
+    DEBUG_LOG("parseAndDisplayText: 文本='%s', 滚动=%d, 字号=%d, 行号=%d, 颜色=%s, 自动换行=%d, 速度=%d, 方向=%d\n",
+             text, scrollMode, fontSize, line, colorHex, wrap, scrollSpeed, scrollDirection);
 
     // 解析颜色
     uint16_t color = displayManager.whiteColor; // 默认白色
@@ -381,8 +404,7 @@ void WiFiManager::parseAndDisplayText(const char* payload) {
         int b = strtol(colorHex + 5, nullptr, 16) & 0xFF;
         color = (r & 0xF8) << 8 | (g & 0xFC) << 3 | (b >> 3);
     }
-
-    DEBUG_LOG("Text: %s, Scroll: %d, Color: %d, Size: %d, Line: %d, Wrap: %d, Speed: %d, Direction: %d\n", text, scrollMode, color, fontSize, line, wrap, scrollSpeed, scrollDirection);
+    DEBUG_LOG("parseAndDisplayText: 颜色解析完成, RGB565=%d, 耗时: %lu ms\n", color, millis() - startTime);
 
     // 应用设置
     displayManager.setTextSize(fontSize);
@@ -391,12 +413,14 @@ void WiFiManager::parseAndDisplayText(const char* payload) {
     DisplayManager::ScrollDirection direction = (scrollDirection == 0) ? DisplayManager::SCROLL_LEFT : DisplayManager::SCROLL_RIGHT;
 
     // 传入参数并显示
+    DEBUG_LOG("parseAndDisplayText: 调用displayText...\n");
     displayManager.displayText(text, scrollMode, color, line, wrap, scrollSpeed, direction);
-
+    DEBUG_LOG("parseAndDisplayText: displayText返回, 总耗时: %lu ms\n", millis() - startTime);
 }
 
 void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
-    DEBUG_LOG("收到图片MQTT消息，大小: %d 字节\n", length);
+    unsigned long startTime = millis();
+    DEBUG_LOG("parseAndDisplayImage: 开始处理, 时间: %lu ms, 大小: %d 字节\n", startTime, length);
 
     // 检查消息大小
     if (length > MAX_MQTT_PAYLOAD_SIZE) {
@@ -412,6 +436,7 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
         DEBUG_LOG("图片消息缺少 image_base64 字段\n");
         return;
     }
+    DEBUG_LOG("parseAndDisplayImage: 找到image_base64字段, 耗时: %lu ms\n", millis() - startTime);
 
     // 跳过字段名称和引号
     imageBase64Start += 16;  // 跳过 "\"image_base64\":\""
@@ -426,7 +451,7 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
 
     // 计算base64数据长度
     int imageLength = imageBase64End - imageBase64Start;
-    DEBUG_LOG("收到图片数据，base64长度: %d 字节\n", imageLength);
+    DEBUG_LOG("parseAndDisplayImage: 提取base64数据, 长度: %d 字节, 耗时: %lu ms\n", imageLength, millis() - startTime);
 
     // 检查base64数据大小是否超过限制
     if (imageLength > MAX_MQTT_PAYLOAD_SIZE) {
@@ -435,7 +460,9 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
     }
 
     // 调用 displayImage 显示图片
+    DEBUG_LOG("parseAndDisplayImage: 调用displayImage...\n");
     displayManager.displayImage(imageBase64Start, imageLength);
+    DEBUG_LOG("parseAndDisplayImage: displayImage返回, 总耗时: %lu ms\n", millis() - startTime);
 }
 
 void WiFiManager::startConfigMode() {

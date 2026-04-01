@@ -14,6 +14,7 @@ DisplayManager::DisplayManager() :
     blackColor(0), whiteColor(0), redColor(0), greenColor(0), blueColor(0), yellowColor(0), pinkColor(0),
     isFullScreenDisplay(false),
     fullScreenContent(nullptr),
+    isImageDisplayMode(false),
     lastFrameTime(0),
     frameInterval(20)  // 20ms = 50fps，提高流畅度
 {
@@ -72,6 +73,11 @@ void DisplayManager::init() {
 }
 
 void DisplayManager::loop() {
+    // 如果是图片显示模式，跳过渲染循环
+    if (isImageDisplayMode) {
+        return;
+    }
+
     // 标准帧渲染流程：更新 -> 渲染 -> 翻转缓冲区
     // 修改：滚动更新和渲染同步进行，避免位置跳跃
     unsigned long now = millis();
@@ -305,6 +311,9 @@ void DisplayManager::clearAll() {
     // 释放所有滚动和静态文本
     freeAllScrollLines();
     freeAllStaticTexts();
+
+    // 清除图片显示模式
+    isImageDisplayMode = false;
 
     dma_display->clearScreen();
 }
@@ -567,24 +576,40 @@ void DisplayManager::setBrightness(uint8_t brightness) {
 }
 
 void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_t color, int line, bool autoWrap, int scrollSpeed, ScrollDirection direction) {
+    unsigned long startTime = millis();
+    DEBUG_LOG("displayText: 开始处理, 时间: %lu ms\n", startTime);
+    DEBUG_LOG("displayText: 文本='%s', 滚动=%d, 颜色=%d, 行号=%d, 自动换行=%d, 速度=%d, 方向=%d\n",
+             textContent, isScroll, color, line, autoWrap, scrollSpeed, direction);
+
     // 通用显示函数：既支持静态也支持滚动。
     // 约定：当 line <= 0 时，视为全屏静态显示；否则在指定行进行显示。
 
+    // 退出图片显示模式，恢复正常文本渲染
+    if (isImageDisplayMode) {
+        isImageDisplayMode = false;
+        DEBUG_LOG("displayText: 退出图片显示模式，开始显示文本\n");
+    }
+
     if (!isScroll) {
+        DEBUG_LOG("displayText: 静态文本模式\n");
         // 静态文本模式：只保存数据，不直接绘制
         if (line <= 0) {
             // 全屏显示模式
+            DEBUG_LOG("displayText: 全屏显示模式\n");
             clearFullScreenContent();
             freeAllScrollLines();
             freeAllStaticTexts();
 
             fullScreenContent = allocateAndCopyString(textContent);
             if (fullScreenContent == nullptr) {
+                DEBUG_LOG("displayText: 内存分配失败\n");
                 return;
             }
             isFullScreenDisplay = true;
+            DEBUG_LOG("displayText: 全屏文本已保存, 耗时: %lu ms\n", millis() - startTime);
         } else {
             // 指定行显示模式
+            DEBUG_LOG("displayText: 指定行显示模式, line=%d\n", line);
             clearFullScreenContent();
 
             if (line >= 1 && line <= maxLines && staticTexts != nullptr) {
@@ -610,6 +635,7 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
 
                 // 如果内存分配失败，直接返回
                 if (staticTexts[index].content == nullptr) {
+                    DEBUG_LOG("displayText: 内存分配失败\n");
                     return;
                 }
 
@@ -618,12 +644,15 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
                 staticTexts[index].autoWrap = autoWrap;
                 staticTexts[index].isActive = true;
                 staticTexts[index].textSize = textSize;
+                DEBUG_LOG("displayText: 静态文本已保存到行 %d, 耗时: %lu ms\n", line, millis() - startTime);
             }
         }
+        DEBUG_LOG("displayText: 静态文本处理完成, 总耗时: %lu ms\n", millis() - startTime);
         return;
     }
 
     // 滚动文本模式：保存滚动文本信息（保持原有逻辑，不直接绘制）
+    DEBUG_LOG("displayText: 滚动文本模式, line=%d\n", line);
     clearFullScreenContent();
 
     if (line < 1 || line > maxLines) line = 1;
@@ -675,9 +704,13 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
     scrollLines[index].yPosition = yPosition;
     scrollLines[index].isScrolling = true;
     scrollLines[index].isActive = true;
+    DEBUG_LOG("displayText: 滚动文本已保存, 总耗时: %lu ms\n", millis() - startTime);
 }
 
 void DisplayManager::displayImage(const char *base64Data, int length) {
+    unsigned long startTime = millis();
+    DEBUG_LOG("displayImage: 开始处理图片, 时间: %lu ms\n", startTime);
+
     if (base64Data == nullptr || length == 0) {
         DEBUG_LOG("displayImage: 数据为空\n");
         return;
@@ -697,30 +730,41 @@ void DisplayManager::displayImage(const char *base64Data, int length) {
     }
 
     // 分配内存
+    DEBUG_LOG("displayImage: 分配内存...\n");
     uint8_t *decodedData = (uint8_t *)malloc(decodedLen);
     if (decodedData == nullptr) {
-        DEBUG_LOG("displayImage: 内存分配失败\n");
+        DEBUG_LOG("displayImage: 内存分配失败, 需要 %d 字节\n", decodedLen);
         return;
     }
+    DEBUG_LOG("displayImage: 内存分配成功, 耗时: %lu ms\n", millis() - startTime);
 
     // 解码base64数据
+    DEBUG_LOG("displayImage: 开始解码base64...\n");
     decode_base64((const unsigned char*)base64Data, length, decodedData);
-    DEBUG_LOG("displayImage: 解码完成\n");
+    DEBUG_LOG("displayImage: 解码完成, 耗时: %lu ms\n", millis() - startTime);
 
     // 计算图像尺寸
     int dataSize = min((int)decodedLen, imageSize);
     int pixelCount = dataSize / 2;
+    DEBUG_LOG("displayImage: 准备绘制 %d 像素\n", pixelCount);
 
     // 清空全屏模式和所有滚动文本
+    DEBUG_LOG("displayImage: 清除文本内容...\n");
     clearFullScreenContent();
     freeAllScrollLines();
     freeAllStaticTexts();
 
-    // 下一帧将绘制图像（通过 renderFrame）
-    // 这里只清屏，实际的图像绘制在 renderFrame 中处理
+    // 进入图片显示模式
+    isImageDisplayMode = true;
+    DEBUG_LOG("displayImage: 已设置图片显示模式, 耗时: %lu ms\n", millis() - startTime);
+
+    // 清除缓冲区
+    DEBUG_LOG("displayImage: 清除缓冲区...\n");
     dma_display->clearScreen();
+    DEBUG_LOG("displayImage: 缓冲区清除完成, 耗时: %lu ms\n", millis() - startTime);
 
     // 将rgb565数据绘制到屏幕
+    DEBUG_LOG("displayImage: 开始绘制像素...\n");
     for (int i = 0; i < pixelCount; i++) {
         int x = i % PANEL_RES_X;
         int y = i / PANEL_RES_X;
@@ -730,17 +774,29 @@ void DisplayManager::displayImage(const char *base64Data, int length) {
 
         dma_display->drawPixel(x, y, color);
 
-        // 每128个像素喂狗一次，避免看门狗超时
-        if (i % 128 == 0) {
+        // 每256个像素喂狗一次，避免看门狗超时
+        if (i % 256 == 0) {
             esp_task_wdt_reset();
+        }
+
+        // 每1024个像素输出进度（避免过于频繁）
+        if (i % 1024 == 0) {
+            DEBUG_LOG("displayImage: 绘制进度 %d/%d (%.1f%%), 耗时: %lu ms\n", 
+                     i, pixelCount, (i * 100.0) / pixelCount, millis() - startTime);
         }
     }
 
-    // 翻转缓冲区显示图像
-    dma_display->flipDMABuffer();
+    DEBUG_LOG("displayImage: 像素绘制完成, 耗时: %lu ms\n", millis() - startTime);
 
-    DEBUG_LOG("displayImage: 已绘制 %d 像素\n", pixelCount);
+    // 翻转缓冲区显示图像
+    DEBUG_LOG("displayImage: 翻转缓冲区...\n");
+    dma_display->flipDMABuffer();
+    DEBUG_LOG("displayImage: 缓冲区翻转完成, 总耗时: %lu ms\n", millis() - startTime);
 
     // 释放内存
+    DEBUG_LOG("displayImage: 释放内存...\n");
     free(decodedData);
+
+    unsigned long totalTime = millis() - startTime;
+    DEBUG_LOG("displayImage: 完成! 总共绘制 %d 像素, 总耗时 %lu ms\n", pixelCount, totalTime);
 }
