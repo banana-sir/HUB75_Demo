@@ -101,8 +101,9 @@ Frame 3: 40ms ~ 60ms
 
 ```cpp
 void DisplayManager::loop() {
-    // 图片显示模式下跳过渲染
-    if (isImageDisplayMode) {
+    // 如果是图片显示模式或全屏显示模式或没有内容可显示，跳过渲染循环
+    // 全屏静态文本(line=-1)采用非渲染模式，类似于图片显示，提高效率
+    if (isImageDisplayMode || isFullScreenDisplay || !hasContentToDisplay) {
         return;
     }
 
@@ -375,7 +376,7 @@ displayManager.pinkColor   // 粉色
 #### 使用示例
 
 ```cpp
-// 静态文本 - 全屏显示
+// 静态文本 - 全屏显示（line=-1，采用非渲染模式）
 displayManager.displayText("Hello World", false, 0xFFFF, -1, true);
 
 // 静态文本 - 第1行显示
@@ -390,12 +391,14 @@ displayManager.setTextSize(2);
 displayManager.displayText("World", true, displayManager.redColor, 2, false, 3, DisplayManager::SCROLL_RIGHT);
 ```
 
+**注意**：全屏静态文本(line=-1)采用非渲染模式，类似于图片显示，loop() 会跳过渲染以提高效率。此时文本颜色由 payload 的 color 参数指定。
+
 ---
 
 ### 清除功能
 
 #### clearAll()
-清除整个屏幕、停止所有滚动、退出图片显示模式。
+清除整个屏幕、停止所有滚动、退出图片显示模式和全屏显示模式。
 
 ```cpp
 displayManager.clearAll();
@@ -528,7 +531,8 @@ displayManager.displayImage(base64Image, strlen(base64Image));
 **注意：**
 - 显示图片会自动退出图片模式，清除所有文本内容
 - 进入图片显示模式后，loop() 会跳过渲染以保持图片静止
-- 调用 displayText() 或 clearAll() 会退出图片模式
+- 进入全屏静态文本模式后，loop() 也会跳过渲染以提高效率
+- 调用 displayText() 或 clearAll() 会退出图片模式或全屏显示模式
 
 ---
 
@@ -546,6 +550,7 @@ displayManager.displayText("Hello World", false, 0xFFFF, 1, false);
 ```cpp
 displayManager.setTextSize(2);
 displayManager.displayText("全屏显示", false, displayManager.redColor, -1, true);
+// 全屏静态文本采用非渲染模式，loop() 会跳过渲染以提高效率
 ```
 
 ### 场景 3：单行滚动文本
@@ -636,10 +641,10 @@ void loop() {
 - 中文：3字节
 - Emoji：4字节
 
-### 6. 图片显示模式
+### 6. 图片显示模式和全屏显示模式
 
-- 进入图片模式后，loop() 会跳过渲染以保持图片静止
-- 显示新文本或调用 clearAll() 会自动退出图片模式
+- 进入图片模式或全屏静态文本模式后，loop() 会跳过渲染以保持内容静止
+- 显示新文本或调用 clearAll() 会自动退出图片模式或全屏显示模式
 - 图片数据必须是 RGB565 格式（小端序）
 
 ---
@@ -658,11 +663,15 @@ void loop() {
 #define DEFAULT_BRIGHTNESS 128  // 默认亮度（0-255）
 
 // 滚动速度配置
-#define SCROLL_INTERVAL_SLOW 45      // 慢速（毫秒）
-#define SCROLL_INTERVAL_MEDIUM 35    // 中速（毫秒）
-#define SCROLL_INTERVAL_FAST 20      // 快速（毫秒）
+// 采用帧计数机制，确保滚动更新与帧渲染完全同步
+// 渲染频率：固定50fps，每帧20ms
 #define SCROLL_OFFSET_LEFT -1        // 向左滚动偏移
 #define SCROLL_OFFSET_RIGHT 1        // 向右滚动偏移
+
+// 滚动速度说明：
+// - 速度等级1=慢(每3帧48ms移动1像素)
+// - 速度等级2=中(每2帧32ms移动1像素)
+// - 速度等级3=快(每帧16ms移动1像素)
 
 // MQTT配置
 #define MAX_MQTT_PAYLOAD_SIZE 12800  // 最大MQTT载荷（字节）

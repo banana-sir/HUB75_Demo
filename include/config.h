@@ -1,8 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define DEBUG_MODE 1     // 0: 关闭调试模式, 1: 开启调试模式
-#define LED_SIZE 0       // 0: 64x32, 1: 64x64
+#define DEBUG_MODE 0     // 0: 关闭调试模式, 1: 开启调试模式
+#define LED_SIZE 1       // 0: 64x32, 1: 64x64
 
 // 调试日志宏
 #if(DEBUG_MODE == 1)
@@ -63,14 +63,14 @@
 // 滚动文本配置
 // ============================================================================
 
-// 滚动速度档位对应的更新间隔（毫秒）
-#define SCROLL_INTERVAL_SLOW 45      // 慢速：每45ms移动1像素
-#define SCROLL_INTERVAL_MEDIUM 35    // 中速：每35ms移动1像素
-#define SCROLL_INTERVAL_FAST 20     // 快速：每20ms移动1像素
-
 // 滚动像素偏移（每次更新移动的像素数）
 #define SCROLL_OFFSET_LEFT -1       // 向左滚动
 #define SCROLL_OFFSET_RIGHT 1       // 向右滚动
+
+// 滚动速度说明：
+// - 速度等级：1=慢(每3帧48ms移动1像素)，2=中(每2帧32ms移动1像素)，3=快(每帧16ms移动1像素)
+// - 采用帧计数机制，确保滚动更新与帧渲染完全同步，避免时间不同步导致的跳跃感
+// - 渲染频率：固定60fps，每帧16ms
 
 // ============================================================================
 // WiFi 和 MQTT 配置

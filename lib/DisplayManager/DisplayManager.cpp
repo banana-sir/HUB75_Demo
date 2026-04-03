@@ -14,9 +14,11 @@ DisplayManager::DisplayManager() :
     blackColor(0), whiteColor(0), redColor(0), greenColor(0), blueColor(0), yellowColor(0), pinkColor(0),
     isFullScreenDisplay(false),
     fullScreenContent(nullptr),
+    fullScreenColor(0),
     isImageDisplayMode(false),
+    hasContentToDisplay(false),
     lastFrameTime(0),
-    frameInterval(20)  // 20ms = 50fps，提高流畅度
+    frameInterval(16)  // 16ms ≈ 60fps，更流畅的显示效果
 {
 }
 
@@ -73,13 +75,12 @@ void DisplayManager::init() {
 }
 
 void DisplayManager::loop() {
-    // 如果是图片显示模式，跳过渲染循环
-    if (isImageDisplayMode) {
+    // 如果是图片显示模式或全屏静态文本模式或没有内容需要显示，跳过渲染循环（节省资源）
+    if (isImageDisplayMode || isFullScreenDisplay || !hasContentToDisplay) {
         return;
     }
 
     // 标准帧渲染流程：更新 -> 渲染 -> 翻转缓冲区
-    // 修改：滚动更新和渲染同步进行，避免位置跳跃
     unsigned long now = millis();
 
     // 只在达到目标帧间隔时才进行更新和渲染（保持同步）
@@ -101,7 +102,7 @@ void DisplayManager::freeAllScrollLines() {
             scrollLines[i].isActive = false;
             scrollLines[i].isScrolling = false;
             scrollLines[i].cachedTextWidth = 0;  // 重置缓存的文本宽度
-            scrollLines[i].lastUpdateTime = 0;  // 重置上次更新时间
+            scrollLines[i].frameCounter = 0;  // 重置帧计数器
             scrollLines[i].xPosition = PANEL_RES_X;  // 重置X位置
         }
     }
@@ -120,24 +121,58 @@ void DisplayManager::freeAllStaticTexts() {
     }
 }
 
+void DisplayManager::updateContentDisplayState() {
+    // 检查是否有任何内容需要显示
+    bool hasScrolling = false;
+    bool hasStatic = false;
+    bool hasFullScreen = false;
+
+    // 检查滚动文本
+    if (scrollLines) {
+        for (int i = 0; i < maxLines; i++) {
+            if (scrollLines[i].isActive && scrollLines[i].content) {
+                hasScrolling = true;
+                break;
+            }
+        }
+    }
+
+    // 检查静态文本
+    if (!hasScrolling && staticTexts) {
+        for (int i = 0; i < maxLines; i++) {
+            if (staticTexts[i].isActive && staticTexts[i].content) {
+                hasStatic = true;
+                break;
+            }
+        }
+    }
+
+    // 检查全屏显示
+    hasFullScreen = isFullScreenDisplay && (fullScreenContent != nullptr);
+
+    // 更新状态
+    bool newState = hasScrolling || hasStatic || hasFullScreen;
+    if (newState != hasContentToDisplay) {
+        hasContentToDisplay = newState;
+        DEBUG_LOG("DisplayManager: 内容显示状态 -> %s\n", newState ? "有内容" : "无内容");
+    }
+}
+
 void DisplayManager::updateScrolling() {
     // 只更新滚动状态（位置等），不进行任何绘制
     if (!isDisplayReady() || scrollLines == nullptr) {
         return;
     }
 
-    unsigned long now = millis();
-
     // 更新所有激活的滚动行，每行独立更新
     for (int i = 0; i < maxLines; i++) {
         if (scrollLines[i].isActive && scrollLines[i].isScrolling && scrollLines[i].content) {
-            // 使用lastUpdateTime跟踪该行上次更新的时间
-            if (!scrollLines[i].lastUpdateTime) {
-                scrollLines[i].lastUpdateTime = now;
-            }
+            // 增加帧计数器
+            scrollLines[i].frameCounter++;
 
-            if (now - scrollLines[i].lastUpdateTime >= scrollLines[i].updateFrameInterval) {
-                scrollLines[i].lastUpdateTime = now;
+            // 当达到更新间隔帧数时，更新位置
+            if (scrollLines[i].frameCounter >= scrollLines[i].updateFrameInterval) {
+                scrollLines[i].frameCounter = 0;  // 重置计数器
 
                 // 更新文本位置（根据方向移动1像素）
                 if (scrollLines[i].scrollDirection == SCROLL_LEFT) {
@@ -169,24 +204,17 @@ void DisplayManager::updateScrolling() {
 
 void DisplayManager::renderFrame() {
     // 完整的帧渲染：清空缓冲区 -> 绘制静态文本 -> 绘制滚动文本 -> 翻转缓冲区
+    // 注意：全屏静态文本和图片模式不会调用此函数
     if (!isDisplayReady()) {
         return;
     }
 
-    // 清除后缓冲区（注意：clearScreen() 本身是非常快的操作）
+    // 清除后缓冲区
     dma_display->clearScreen();
 
-    // 如果是全屏显示模式，绘制全屏内容
-    if (isFullScreenDisplay && fullScreenContent) {
-        dma_display->setTextColor(whiteColor);
-        dma_display->setCursor(0, 0);
-        dma_display->setTextWrap(true);
-        dma_display->printlnUTF8(fullScreenContent);
-    } else {
-        // 否则绘制静态文本和滚动文本
-        renderStaticTexts();
-        renderScrollingTexts();
-    }
+    // 绘制静态文本和滚动文本（全屏静态文本不会走到这里）
+    renderStaticTexts();
+    renderScrollingTexts();
 
     // 翻转DMA缓冲区
     // 注：flipDMABuffer() 会在硬件准备好时进行缓冲区交换，确保同步
@@ -211,7 +239,7 @@ void DisplayManager::renderStaticTexts() {
         }
     }
 
-    // 重置状态（重要：确保不影响后续滚动文本渲染）
+    // 恢复全局设置（确保不影响后续滚动文本渲染）
     dma_display->setTextWrap(false);
     dma_display->setTextSize(textSize);
 }
@@ -315,7 +343,12 @@ void DisplayManager::clearAll() {
     // 清除图片显示模式
     isImageDisplayMode = false;
 
+    // 先清屏（在更新状态之前，确保屏幕被清除）
     dma_display->clearScreen();
+    dma_display->flipDMABuffer();
+
+    // 更新内容显示状态（清屏后会跳过渲染）
+    updateContentDisplayState();
 }
 
 void DisplayManager::clearArea(uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
@@ -324,14 +357,14 @@ void DisplayManager::clearArea(uint16_t x, uint16_t y, uint16_t width, uint16_t 
     dma_display->fillRect(x, y, width, height, blackColor);
 }
 
-int DisplayManager::calculateTextLines(const char *textContent, int startLine) {
+int DisplayManager::calculateTextLines(const char *textContent, int startLine, int textSizeParam) {
     // 计算文本需要占用的物理行数（用于自动换行场景）
-    // 物理行数 = 文本行数 × textSize
+    // 物理行数 = 文本行数 × textSizeParam
     if (textContent == nullptr || strlen(textContent) == 0) {
-        return textSize;  // 即使空文本也占用 textSize 个物理行
+        return textSizeParam;  // 即使空文本也占用 textSizeParam 个物理行
     }
 
-    int charWidth = 8 * textSize;  // 英文字符宽度（基于当前字体大小）
+    int charWidth = 8 * textSizeParam;  // 英文字符宽度（基于传入的字体大小）
     int lineWidth = PANEL_RES_X;   // 屏幕宽度
     int textLines = 0;  // 文本行数（不是物理行数）
     int currentWidth = 0;
@@ -366,24 +399,26 @@ int DisplayManager::calculateTextLines(const char *textContent, int startLine) {
     }
 
     // 计算实际占用的物理行数（考虑字体大小）
-    // 例如：textSize=2时，1行文本占用2个物理行（32像素高）
-    int physicalLines = textLines * textSize;
+    // 例如：textSizeParam=2时，1行文本占用2个物理行（32像素高）
+    int physicalLines = textLines * textSizeParam;
 
     return physicalLines;
 }
 
 int DisplayManager::calculateScrollInterval(int speed) {
-    // 根据速度等级计算更新间隔（毫秒）
-    // 1=慢，2=中，3=快
+    // 根据速度等级计算更新间隔（帧数）
+    // 使用帧计数器实现，与渲染帧同步，更平滑
+    // 基于60fps（每帧16ms）
+    // 1=慢（每3帧移动1像素），2=中（每2帧移动1像素），3=快（每帧移动1像素）
     switch (speed) {
         case 1:
-            return SCROLL_INTERVAL_SLOW;
+            return 3;  // 慢速：每3帧（48ms）移动1像素
         case 2:
-            return SCROLL_INTERVAL_MEDIUM;
+            return 2;  // 中速：每2帧（32ms）移动1像素
         case 3:
-            return SCROLL_INTERVAL_FAST;
+            return 1;  // 快速：每帧（16ms）移动1像素
         default:
-            return SCROLL_INTERVAL_MEDIUM;  // 默认中速
+            return 2;  // 默认中速
     }
 }
 
@@ -439,6 +474,9 @@ void DisplayManager::clearFullScreenContent() {
         fullScreenContent = nullptr;
     }
     isFullScreenDisplay = false;
+
+    // 更新内容显示状态（仅当独立调用时）
+    // 注意：如果是在 clearAll() 或 displayText() 中调用，会由调用者更新状态
 }
 
 int DisplayManager::getStaticTextHeight(int staticIndex) {
@@ -449,7 +487,7 @@ int DisplayManager::getStaticTextHeight(int staticIndex) {
 
     int staticHeight = staticTexts[staticIndex].textSize * 16;
     if (staticTexts[staticIndex].autoWrap && staticTexts[staticIndex].content) {
-        int staticLines = calculateTextLines(staticTexts[staticIndex].content, staticTexts[staticIndex].line);
+        int staticLines = calculateTextLines(staticTexts[staticIndex].content, staticTexts[staticIndex].line, staticTexts[staticIndex].textSize);
         staticHeight = staticLines * 16;
     }
 
@@ -475,33 +513,51 @@ void DisplayManager::clearScrollLineByIndex(int index) {
     scrollLines[index].isActive = false;
     scrollLines[index].isScrolling = false;
     scrollLines[index].cachedTextWidth = 0;
-    scrollLines[index].lastUpdateTime = 0;  // 重置上次更新时间
+    scrollLines[index].frameCounter = 0;  // 重置帧计数器
     scrollLines[index].xPosition = PANEL_RES_X;  // 重置X位置
+
+    // 更新内容显示状态
+    updateContentDisplayState();
 }
 
 void DisplayManager::clearStaticLineByIndex(int index) {
     // 清除指定索引的静态文本
     if (!isValidStaticIndex(index)) return;
 
+    DEBUG_LOG("clearStaticLineByIndex: 清除静态文本[index=%d], line=%d, isActive=%d\n",
+             index, staticTexts[index].line, staticTexts[index].isActive);
+
     if (staticTexts[index].content != nullptr) {
         free(staticTexts[index].content);
         staticTexts[index].content = nullptr;
     }
     staticTexts[index].isActive = false;
+
+    // 更新内容显示状态
+    updateContentDisplayState();
 }
 
 void DisplayManager::clearOverlappingAutoWrapTexts(int yPosition, int height) {
     // 清除与指定区域重叠的自动换行静态文本
+    DEBUG_LOG("clearOverlappingAutoWrapTexts: 开始检查, 目标区域(y=%d, h=%d)\n", yPosition, height);
+
     for (int i = 0; i < maxLines; i++) {
         if (staticTexts[i].isActive && staticTexts[i].autoWrap && staticTexts[i].content) {
             int staticY = (staticTexts[i].line - 1) * 16;
             int staticHeight = getStaticTextHeight(i);
 
-            if (isOverlap(yPosition, height, staticY, staticHeight)) {
+            bool overlap = isOverlap(yPosition, height, staticY, staticHeight);
+            DEBUG_LOG("clearOverlappingAutoWrapTexts: 检查自动换行文本[%d] - line=%d, autoWrap=%d, staticY=%d, staticHeight=%d, 目标(y=%d,h=%d), overlap=%d\n",
+                     i, staticTexts[i].line, staticTexts[i].autoWrap, staticY, staticHeight, yPosition, height, overlap);
+
+            if (overlap) {
+                DEBUG_LOG("clearOverlappingAutoWrapTexts: 清除重叠的自动换行文本[%d]\n", i);
                 clearStaticLineByIndex(i);
             }
         }
     }
+
+    DEBUG_LOG("clearOverlappingAutoWrapTexts: 检查完成\n");
 }
 
 void DisplayManager::clearOverlappingScrollTexts(int yPosition, int height, int excludeIndex) {
@@ -519,6 +575,9 @@ void DisplayManager::clearOverlappingScrollTexts(int yPosition, int height, int 
 
 void DisplayManager::clearOverlappingStaticTexts(int yPosition, int height, int excludeIndex) {
     // 清除与指定区域重叠的静态文本
+    DEBUG_LOG("clearOverlappingStaticTexts: 开始检查, 目标区域(y=%d, h=%d), excludeIndex=%d\n",
+             yPosition, height, excludeIndex);
+
     for (int i = 0; i < maxLines; i++) {
         if (i == excludeIndex) continue;
 
@@ -526,11 +585,18 @@ void DisplayManager::clearOverlappingStaticTexts(int yPosition, int height, int 
             int staticY = (staticTexts[i].line - 1) * 16;
             int staticHeight = getStaticTextHeight(i);
 
-            if (isOverlap(yPosition, height, staticY, staticHeight)) {
+            bool overlap = isOverlap(yPosition, height, staticY, staticHeight);
+            DEBUG_LOG("clearOverlappingStaticTexts: 检查静态文本[%d] - line=%d, staticY=%d, staticHeight=%d, 目标(y=%d,h=%d), overlap=%d\n",
+                     i, staticTexts[i].line, staticY, staticHeight, yPosition, height, overlap);
+
+            if (overlap) {
+                DEBUG_LOG("clearOverlappingStaticTexts: 清除重叠的静态文本[%d]\n", i);
                 clearStaticLineByIndex(i);
             }
         }
     }
+
+    DEBUG_LOG("clearOverlappingStaticTexts: 检查完成\n");
 }
 
 void DisplayManager::clearLinesRange(int startLine, int lineCount) {
@@ -555,8 +621,8 @@ void DisplayManager::clearLine(uint16_t line) {
 }
 
 void DisplayManager::setTextSize(int size) {
-    // 只设置字体大小，不重新分配滚动行数组
-    // 不同字体大小的滚动文本可以同时存在
+    // 设置全局字体大小，用于新创建的文本
+    // 已存在的文本保持自己的字体大小不变
     if (!isDisplayReady()) return;
     textSize = size;
     dma_display->setTextSize(textSize);
@@ -605,7 +671,23 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
                 DEBUG_LOG("displayText: 内存分配失败\n");
                 return;
             }
+            fullScreenColor = (color != 0) ? color : whiteColor;
             isFullScreenDisplay = true;
+
+            // 更新内容显示状态（确保渲染循环正常工作）
+            updateContentDisplayState();
+
+            // 强制立即渲染一帧（清屏并显示全屏文本）
+            dma_display->clearScreen();
+            dma_display->setTextColor(fullScreenColor);
+            dma_display->setCursor(0, 0);
+            dma_display->setTextWrap(true);
+            dma_display->printlnUTF8(fullScreenContent);
+            dma_display->flipDMABuffer();
+
+            // 全屏静态文本不需要持续渲染，清空内容显示状态标记
+            updateContentDisplayState();
+
             DEBUG_LOG("displayText: 全屏文本已保存, 耗时: %lu ms\n", millis() - startTime);
         } else {
             // 指定行显示模式
@@ -644,9 +726,17 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
                 staticTexts[index].autoWrap = autoWrap;
                 staticTexts[index].isActive = true;
                 staticTexts[index].textSize = textSize;
+
+                // 更新内容显示状态
+                updateContentDisplayState();
+
                 DEBUG_LOG("displayText: 静态文本已保存到行 %d, 耗时: %lu ms\n", line, millis() - startTime);
             }
         }
+
+        // 更新内容显示状态
+        updateContentDisplayState();
+
         DEBUG_LOG("displayText: 静态文本处理完成, 总耗时: %lu ms\n", millis() - startTime);
         return;
     }
@@ -661,9 +751,17 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
     // 清除该行旧的滚动内容
     clearScrollLineByIndex(index);
 
-    // 计算Y坐标和高度
+    // 计算Y坐标（行号对应的固定Y坐标）
     int yPosition = (line - 1) * 16;
-    int lineHeight = textSize * 16;
+
+    // 先设置该行的字体大小（使用当前的全局textSize）
+    scrollLines[index].textSize = textSize;
+
+    // 使用该行的字体大小计算实际高度
+    int lineHeight = scrollLines[index].textSize * 16;
+
+    DEBUG_LOG("displayText: 滚动文本区域 - yPosition=%d, lineHeight=%d, line=%d, textSize=%d\n",
+             yPosition, lineHeight, line, scrollLines[index].textSize);
 
     // 清除重叠的文本
     clearOverlappingAutoWrapTexts(yPosition, lineHeight);
@@ -687,11 +785,8 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
     // 设置该行的更新间隔
     scrollLines[index].updateFrameInterval = calculateScrollInterval(scrollSpeed);
 
-    // 设置该行的字体大小（使用当前的全局textSize）
-    scrollLines[index].textSize = textSize;
-
     // 计算并缓存文本宽度
-    scrollLines[index].cachedTextWidth = calculateTextWidth(textContent, textSize, 0, yPosition);
+    scrollLines[index].cachedTextWidth = calculateTextWidth(textContent, scrollLines[index].textSize, 0, yPosition);
 
     // 根据滚动方向设置初始位置
     if (direction == SCROLL_LEFT) {
@@ -704,6 +799,10 @@ void DisplayManager::displayText(const char *textContent, bool isScroll, uint16_
     scrollLines[index].yPosition = yPosition;
     scrollLines[index].isScrolling = true;
     scrollLines[index].isActive = true;
+
+    // 更新内容显示状态
+    updateContentDisplayState();
+
     DEBUG_LOG("displayText: 滚动文本已保存, 总耗时: %lu ms\n", millis() - startTime);
 }
 

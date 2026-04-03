@@ -7,6 +7,10 @@
 #include "esp_task_wdt.h"
 #include "config.h"
 
+// ============================================================================
+// 构造和析构
+// ============================================================================
+
 WiFiManager::WiFiManager() :
     mqttClient(nullptr),
     webServer(nullptr),
@@ -19,6 +23,10 @@ WiFiManager::WiFiManager() :
     isConfigMode(false),
     connectStartTime(0),
     mqttWasConnected(false),
+#if DEBUG_MODE == 1
+    lastMqttLoopTime(0),
+    lastMqttState(-1),
+#endif
     mqttMessageQueue(nullptr),
     mqttProcessTaskHandle(nullptr) {
 }
@@ -38,48 +46,9 @@ WiFiManager::~WiFiManager() {
     }
 }
 
-void WiFiManager::connectWiFi() {
-    // 强制设置连接中状态（用于所有WiFi连接场景：首次连接、断线重连、MQTT失败触发重连）
-    isConnecting = true;
-    connectStartTime = millis();
-
-    // 显示连接提示
-    DEBUG_LOG("正在连接WiFi...\n");
-    displayManager.clearAll();
-    displayManager.setTextSize(1);
-    displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor, 1);
-
-    // 从Preferences读取保存的WiFi信息
-    String ssid = preferences.getString("wifi_ssid", "");
-    String password = preferences.getString("wifi_password", "");
-
-    if (ssid.length() > 0) {
-        DEBUG_LOG("尝试连接保存的WiFi: %s\n", ssid.c_str());
-        WiFi.begin(ssid.c_str(), password.c_str());
-    } else {
-        DEBUG_LOG("未找到保存的WiFi信息，进入配网模式\n");
-        isConnecting = false;
-        startConfigMode();
-        return;
-    }
-}
-
-void WiFiManager::reconnectWiFi() {
-    DEBUG_LOG("WiFi断开连接，正在尝试重新连接...\n");
-
-    // 断开现有连接
-    WiFi.disconnect();
-
-    // 等待WiFi完全断开（最多等待2秒）
-    int waitCount = 0;
-    while (WiFi.status() == WL_CONNECTED && waitCount < 40) {
-        delay(50);
-        waitCount++;
-    }
-
-    // 开始重新连接
-    connectWiFi();
-}
+// ============================================================================
+// 公共接口方法
+// ============================================================================
 
 void WiFiManager::init() {
     DEBUG_LOG("WiFi正在初始化...\n");
@@ -144,6 +113,134 @@ void WiFiManager::init() {
     connectWiFi();
     wifiInitialized = true;
 }
+
+void WiFiManager::loop() {
+    // 处理配网模式下的Web服务器和DNS服务器
+    if (isConfigMode && webServer) {
+        webServer->handleClient();
+        if (dnsServer) {
+            dnsServer->processNextRequest();
+        }
+        // 配网模式下持续喂狗
+        esp_task_wdt_reset();
+        return;
+    }
+
+    // ========== WiFi连接管理 ==========
+    // wifiInitialized: WiFi模块是否已初始化（调用过connectWiFi至少一次）
+    // isConnecting: WiFi是否正在连接中（用于超时检测和阻止MQTT连接）
+    // 只有WiFi已初始化且当前未在连接、且连接断开时，才尝试重连
+    if (wifiInitialized && WiFi.status() != WL_CONNECTED && !isConnecting) {
+        unsigned long now = millis();
+        if (now - lastWiFiConnectAttempt >= wifiReconnectInterval) {
+            lastWiFiConnectAttempt = now;
+            reconnectWiFi();
+        }
+    }
+
+    // 检查连接是否成功或超时
+    if (isConnecting) {
+        if (WiFi.status() == WL_CONNECTED) {
+            DEBUG_LOG("\nWiFi连接成功! IP: %s\n", WiFi.localIP().toString().c_str());
+            displayStatusMessage("WiFi连接成功");
+            isConnecting = false;
+            mqttFailCount = 0;  // WiFi连接成功，重置MQTT失败计数
+        } else if (millis() - connectStartTime >= connectTimeout) {
+            DEBUG_LOG("\nWiFi连接超时，进入配网模式\n");
+            isConnecting = false;
+            startConfigMode();
+        }
+    }
+
+    // ========== MQTT连接管理 ==========
+    // 只有WiFi已连接且不在连接过程中（isConnecting=false）时才处理MQTT
+    if (WiFi.status() == WL_CONNECTED && !isConnecting) {
+        if (!mqttClient->connected()) {
+            unsigned long now = millis();
+            if (now - lastMqttConnectAttempt >= mqttReconnectInterval) {
+                lastMqttConnectAttempt = now;
+                DEBUG_LOG("Attempting MQTT connection to %s:%d... (失败次数: %d/%d)\n",
+                             MQTT_SERVER, MQTT_PORT, mqttFailCount, maxMqttFailCount);
+
+                if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+                    DEBUG_LOG("MQTT服务器已连接\n");
+                    subscribeToMqttTopics();
+                    displayStatusMessage("MQTT服务器已连接");
+
+                    // 连接成功，重置失败计数
+                    mqttFailCount = 0;
+                    mqttWasConnected = true;
+                } else {
+                    int state = mqttClient->state();
+                    mqttFailCount++;
+                    DEBUG_LOG("MQTT连接失败，状态: %d\n", state);
+
+                    // 如果失败5次，强制触发WiFi重连（可能是DNS或网络问题）
+                    if (mqttFailCount >= maxMqttFailCount) {
+                        DEBUG_LOG("MQTT连续失败 %d 次，触发WiFi重连\n", maxMqttFailCount);
+                        mqttFailCount = 0;
+                        reconnectWiFi();
+                    }
+                }
+            }
+        } else {
+#if (DEBUG_MODE == 1)
+            int currentState = mqttClient->state();
+
+            // 只在MQTT状态变化时输出日志
+            if (currentState != lastMqttState) {
+                DEBUG_LOG("MQTT状态变化: %d -> %d\n", lastMqttState, currentState);
+                lastMqttState = currentState;
+            }
+
+            // 每10秒输出一次MQTT心跳信息
+            unsigned long now = millis();
+            if (now - lastMqttLoopTime >= 10000) {
+                DEBUG_LOG("MQTT心跳: 已连接, 状态=%d, 服务器=%s:%d\n", currentState, MQTT_SERVER, MQTT_PORT);
+                lastMqttLoopTime = now;
+            }
+#endif
+
+            mqttClient->loop();
+        }
+    } else {
+        // WiFi断开时，重置MQTT状态
+        if (mqttWasConnected) {
+            DEBUG_LOG("WiFi断开，MQTT连接已断开\n");
+            mqttWasConnected = false;
+            mqttFailCount = 0;
+        }
+    }
+}
+
+bool WiFiManager::isMqttConnected() {
+    return mqttClient && mqttClient->connected();
+}
+
+// ============================================================================
+// 辅助私有方法
+// ============================================================================
+
+void WiFiManager::displayStatusMessage(const char* message) {
+    displayManager.clearAll();
+    displayManager.setTextSize(1);
+    displayManager.displayText(message, false, displayManager.whiteColor, 1);
+}
+
+void WiFiManager::subscribeToMqttTopics() {
+    mqttClient->subscribe(topicText.c_str(), 1);
+    DEBUG_LOG("已订阅主题: %s\n", topicText.c_str());
+    mqttClient->subscribe(topicClear.c_str(), 1);
+    DEBUG_LOG("已订阅主题: %s\n", topicClear.c_str());
+    mqttClient->subscribe(topicBrightness.c_str(), 1);
+    DEBUG_LOG("已订阅主题: %s\n", topicBrightness.c_str());
+    mqttClient->subscribe(topicImage.c_str(), 1);
+    DEBUG_LOG("已订阅主题: %s\n", topicImage.c_str());
+}
+
+// ============================================================================
+// 核心私有方法
+// ============================================================================
 
 bool WiFiManager::enqueueMqttMessage(const char* topic, const byte* payload, unsigned int length) {
     if (mqttMessageQueue == nullptr) {
@@ -245,120 +342,6 @@ void WiFiManager::mqttProcessTask() {
     }
 }
 
-void WiFiManager::loop() {
-    // 处理配网模式下的Web服务器和DNS服务器
-    if (isConfigMode && webServer) {
-        webServer->handleClient();
-        if (dnsServer) {
-            dnsServer->processNextRequest();
-        }
-        // 配网模式下持续喂狗
-        esp_task_wdt_reset();
-        return;
-    }
-
-    // ========== WiFi连接管理 ==========
-    // wifiInitialized: WiFi模块是否已初始化（调用过connectWiFi至少一次）
-    // isConnecting: WiFi是否正在连接中（用于超时检测和阻止MQTT连接）
-    // 只有WiFi已初始化且当前未在连接、且连接断开时，才尝试重连
-    if (wifiInitialized && WiFi.status() != WL_CONNECTED && !isConnecting) {
-        unsigned long now = millis();
-        if (now - lastWiFiConnectAttempt >= wifiReconnectInterval) {
-            lastWiFiConnectAttempt = now;
-            reconnectWiFi();
-        }
-    }
-
-    // 检查连接是否成功或超时
-    if (isConnecting) {
-        if (WiFi.status() == WL_CONNECTED) {
-            DEBUG_LOG("\nWiFi连接成功! IP: %s\n", WiFi.localIP().toString().c_str());
-            displayManager.clearAll();
-            displayManager.setTextSize(1);
-            displayManager.displayText("WiFi连接成功", false, displayManager.whiteColor, 1);
-            isConnecting = false;
-            mqttFailCount = 0;  // WiFi连接成功，重置MQTT失败计数
-        } else if (millis() - connectStartTime >= connectTimeout) {
-            DEBUG_LOG("\nWiFi连接超时，进入配网模式\n");
-            isConnecting = false;
-            startConfigMode();
-        }
-    }
-
-    // ========== MQTT连接管理 ==========
-    // 只有WiFi已连接且不在连接过程中（isConnecting=false）时才处理MQTT
-    if (WiFi.status() == WL_CONNECTED && !isConnecting) {
-        if (!mqttClient->connected()) {
-            unsigned long now = millis();
-            if (now - lastMqttConnectAttempt >= mqttReconnectInterval) {
-                lastMqttConnectAttempt = now;
-                DEBUG_LOG("Attempting MQTT connection to %s:%d... (失败次数: %d/%d)\n",
-                             MQTT_SERVER, MQTT_PORT, mqttFailCount, maxMqttFailCount);
-
-                if (mqttClient->connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
-                    DEBUG_LOG("MQTT服务器已连接\n");
-                    mqttClient->subscribe(topicText.c_str(), 1);
-                    DEBUG_LOG("已订阅主题: %s\n", topicText.c_str());
-                    mqttClient->subscribe(topicClear.c_str(), 1);
-                    DEBUG_LOG("已订阅主题: %s\n", topicClear.c_str());
-                    mqttClient->subscribe(topicBrightness.c_str(), 1);
-                    DEBUG_LOG("已订阅主题: %s\n", topicBrightness.c_str());
-                    mqttClient->subscribe(topicImage.c_str(), 1);
-                    DEBUG_LOG("已订阅主题: %s\n", topicImage.c_str());
-                    displayManager.clearAll();
-                    displayManager.setTextSize(1);
-                    displayManager.displayText("MQTT服务器已连接", false, displayManager.whiteColor, 1);
-
-                    // 连接成功，重置失败计数
-                    mqttFailCount = 0;
-                    mqttWasConnected = true;
-                } else {
-                    int state = mqttClient->state();
-                    mqttFailCount++;
-                    DEBUG_LOG("MQTT连接失败，状态: %d\n", state);
-
-                    // 如果失败5次，强制触发WiFi重连（可能是DNS或网络问题）
-                    if (mqttFailCount >= maxMqttFailCount) {
-                        DEBUG_LOG("MQTT连续失败 %d 次，触发WiFi重连\n", maxMqttFailCount);
-                        mqttFailCount = 0;
-                        reconnectWiFi();
-                    }
-                }
-            }
-        } else {
-            static unsigned long lastMqttLoopTime = 0;
-            static int lastMqttState = -1;
-            int currentState = mqttClient->state();
-
-            // 只在MQTT状态变化时输出日志
-            if (currentState != lastMqttState) {
-                DEBUG_LOG("MQTT状态变化: %d -> %d\n", lastMqttState, currentState);
-                lastMqttState = currentState;
-            }
-
-            mqttClient->loop();
-
-            // 每10秒输出一次MQTT心跳信息
-            unsigned long now = millis();
-            if (now - lastMqttLoopTime >= 10000) {
-                DEBUG_LOG("MQTT心跳: 已连接, 状态=%d, 服务器=%s:%d\n", currentState, MQTT_SERVER, MQTT_PORT);
-                lastMqttLoopTime = now;
-            }
-        }
-    } else {
-        // WiFi断开时，重置MQTT状态
-        if (mqttWasConnected) {
-            DEBUG_LOG("WiFi断开，MQTT连接已断开\n");
-            mqttWasConnected = false;
-            mqttFailCount = 0;
-        }
-    }
-}
-
-bool WiFiManager::isMqttConnected() {
-    return mqttClient && mqttClient->connected();
-}
-
 void WiFiManager::mqttCallback(char* topic, byte* payload, unsigned int length) {
     DEBUG_LOG("MQTT回调: 收到消息, 主题=%s, 长度=%d 字节\n", topic, length);
     if (!enqueueMqttMessage(topic, payload, length)) {
@@ -388,7 +371,8 @@ void WiFiManager::parseAndDisplayText(const char* payload) {
     bool scrollMode = doc["scroll_mode"] | false;
     int fontSize = doc["font_size"] | 1;
     const char* colorHex = doc["color"] | "#FFFFFF";
-    int line = doc["line"] | 1;
+
+    int line = doc["line"] | -1;  // 允许 -1 表示全屏
     bool wrap = doc["wrap"] | true; // 静态文本是否自动换行，默认 true
     int scrollSpeed = doc["scroll_speed"] | 1;
     int scrollDirection = doc["scroll_direction"] | 0;  // 0=向左，1=向右
@@ -465,6 +449,51 @@ void WiFiManager::parseAndDisplayImage(byte* payload, unsigned int length) {
     DEBUG_LOG("parseAndDisplayImage: displayImage返回, 总耗时: %lu ms\n", millis() - startTime);
 }
 
+// ============================================================================
+// WiFi连接方法
+// ============================================================================
+
+void WiFiManager::connectWiFi() {
+    // 强制设置连接中状态（用于所有WiFi连接场景：首次连接、断线重连、MQTT失败触发重连）
+    isConnecting = true;
+    connectStartTime = millis();
+
+    // 显示连接提示
+    DEBUG_LOG("正在连接WiFi...\n");
+    displayStatusMessage("正在连接WiFi");
+
+    // 从Preferences读取保存的WiFi信息
+    String ssid = preferences.getString("wifi_ssid", "");
+    String password = preferences.getString("wifi_password", "");
+
+    if (ssid.length() > 0) {
+        DEBUG_LOG("尝试连接保存的WiFi: %s\n", ssid.c_str());
+        WiFi.begin(ssid.c_str(), password.c_str());
+    } else {
+        DEBUG_LOG("未找到保存的WiFi信息，进入配网模式\n");
+        isConnecting = false;
+        startConfigMode();
+        return;
+    }
+}
+
+void WiFiManager::reconnectWiFi() {
+    DEBUG_LOG("WiFi断开连接，正在尝试重新连接...\n");
+
+    // 断开现有连接
+    WiFi.disconnect();
+
+    // 等待WiFi完全断开（最多等待2秒）
+    int waitCount = 0;
+    while (WiFi.status() == WL_CONNECTED && waitCount < 40) {
+        delay(50);
+        waitCount++;
+    }
+
+    // 开始重新连接
+    connectWiFi();
+}
+
 void WiFiManager::startConfigMode() {
     DEBUG_LOG("启动AP配网模式...\n");
 
@@ -482,11 +511,11 @@ void WiFiManager::startConfigMode() {
     DEBUG_LOG("AP网关: %s\n", WiFi.softAPIP().toString().c_str());
     DEBUG_LOG("AP子网掩码: 255.255.255.0\n");
 
-    // 显示配网信息到LED屏幕
+    // 显示配网信息到LED屏幕（不使用displayStatusMessage避免清屏，需要保留两行显示）
     displayManager.clearAll();
     displayManager.setTextSize(1);
-    displayManager.displayText("配网模式", false, displayManager.whiteColor, 1);  // 指定line=1，避免全屏清除
-    
+    displayManager.displayText("配网模式", false, displayManager.whiteColor, 1);
+
     String apInfo = "请连接热点：" + String(AP_SSID);
     displayManager.displayText(apInfo.c_str(), true, displayManager.whiteColor, 2);
 
@@ -522,6 +551,10 @@ void WiFiManager::startConfigMode() {
     DEBUG_LOG("支持Captive Portal自动跳转\n");
     DEBUG_LOG("访问地址: http://192.168.4.1\n");
 }
+
+// ============================================================================
+// HTTP请求处理方法
+// ============================================================================
 
 void WiFiManager::handleRoot() {
     // 添加Captive Portal相关HTTP头
@@ -662,8 +695,7 @@ void WiFiManager::handleSave() {
     esp_task_wdt_reset();
 
     // 更新显示
-    displayManager.setTextSize(1);
-    displayManager.displayText("正在连接WiFi", false, displayManager.whiteColor, 1);
+    displayStatusMessage("正在连接WiFi");
 
     // 关闭配网模式
     isConfigMode = false;

@@ -92,6 +92,7 @@ CLK_PIN = 5    // 时钟信号
 - Base64 编码的 RGB565 图片
 - 完整屏幕显示
 - 自动退出图片模式接收新内容
+- 采用非渲染模式，节省CPU资源
 
 ### 3. 亮度控制
 - 动态亮度调节（0-255）
@@ -99,11 +100,12 @@ CLK_PIN = 5    // 时钟信号
 
 ### 4. 清屏功能
 - 一键清空所有显示内容
-- 退出图片模式
+- 退出图片模式或全屏显示模式
 
 ### 5. 显示优化
 - DMA 双缓冲机制（50fps，无闪烁）
 - 静态文本与滚动文本完美共存
+- 全屏静态文本采用非渲染模式
 - 自动重叠检测和清除
 - 高效内存管理
 
@@ -367,7 +369,8 @@ LED/246f28a58ec4/Image     # 图片显示
 - 图片必须为 RGB565 格式（每像素 2 字节）
 - 图片尺寸必须与屏幕分辨率一致（64x32 或 64x64）
 - Base64 编码后的数据长度不超过 12800 字节
-- 显示图片后会进入图片模式，发送其他消息会自动退出
+- 显示图片后会进入图片模式，全屏静态文本(line=-1)也会进入非渲染模式
+- 发送其他消息会自动退出图片模式或全屏显示模式
 
 ### 使用 MQTT 客户端测试
 
@@ -427,13 +430,19 @@ mosquitto_pub -h zheng221.xyz -p 1883 \
 
 ### 滚动速度配置
 
-在 `include/config.h` 中配置滚动速度：
+滚动速度采用帧计数机制，在代码中通过 `scrollSpeed` 参数控制：
 
 ```cpp
-#define SCROLL_INTERVAL_SLOW 45      // 慢速：每45ms移动1像素
-#define SCROLL_INTERVAL_MEDIUM 35    // 中速：每35ms移动1像素
-#define SCROLL_INTERVAL_FAST 20     // 快速：每20ms移动1像素
+displayText("Hello World", true, 0xFFFF, 1, false, 2, SCROLL_LEFT);
+//                                                         ^ 速度：1=慢, 2=中, 3=快
 ```
+
+速度说明：
+- 速度1（慢）：每3帧（48ms）移动1像素
+- 速度2（中）：每2帧（32ms）移动1像素
+- 速度3（快）：每帧（16ms）移动1像素
+
+采用帧计数机制确保滚动更新与帧渲染完全同步，避免时间不同步导致的跳跃感。
 
 ### MQTT 配置
 
@@ -466,7 +475,7 @@ const char* password = "YourWiFiPassword";
    - DisplayManager API 参考
    - DMA 双缓冲机制详解
    - 静态文本与滚动文本共存原理
-   - 图片显示功能说明
+   - 图片显示和全屏显示功能说明
 
 2. **[MQTT 客户端使用文档.md](MQTT客户端使用文档.md)**
    - MQTT 协议配置
@@ -623,11 +632,17 @@ HUB75_Demo/
 
 ### 修改滚动速度
 
-编辑 `include/config.h` 中的间隔参数：
+滚动速度通过代码中的 `scrollSpeed` 参数控制（1-3），如需调整速度档位对应的帧间隔，修改 `DisplayManager.cpp` 中的 `calculateScrollInterval` 函数：
+
 ```cpp
-#define SCROLL_INTERVAL_SLOW 50    // 修改慢速
-#define SCROLL_INTERVAL_MEDIUM 35 // 修改中速
-#define SCROLL_INTERVAL_FAST 20   // 修改快速
+int DisplayManager::calculateScrollInterval(int speed) {
+    switch (speed) {
+        case 1: return 3;  // 慢速：每3帧
+        case 2: return 2;  // 中速：每2帧
+        case 3: return 1;  // 快速：每1帧
+        default: return 2;
+    }
+}
 ```
 
 ---
