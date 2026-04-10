@@ -4,7 +4,6 @@
 #include <DNSServer.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include "esp_task_wdt.h"
 
 // ============================================================================
 // 构造和析构

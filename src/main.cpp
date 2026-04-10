@@ -1,13 +1,8 @@
 #include "DisplayManager.h"
 #include "WiFiManager.h"
-#include "esp_task_wdt.h"
-#include "config.h"
 
 DisplayManager displayManager;
 WiFiManager wifiManager;
-
-// WiFi/MQTT 任务句柄
-TaskHandle_t wifiTaskHandle = NULL;
 
 // WiFi/MQTT 任务函数（运行在 Core 0）
 void wifiTaskFunction(void *pvParameters) {
@@ -38,7 +33,7 @@ void setup() {
     16384,              // 堆栈大小（16KB）
     NULL,               // 参数
     1,                  // 优先级（1=低，2=中等，3=高）
-    &wifiTaskHandle,     // 任务句柄
+    NULL,               // 任务句柄
     0                   // Core 0
   );
 

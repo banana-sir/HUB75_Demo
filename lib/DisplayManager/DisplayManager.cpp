@@ -1,8 +1,5 @@
 #include "DisplayManager.h"
 #include <base64.hpp>
-#include "esp_task_wdt.h"
-#include "config.h"
-
 
 DisplayManager::DisplayManager() :
     _pins({R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN}),
